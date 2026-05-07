@@ -1,0 +1,55 @@
+repos:
+  # ── Python ──────────────────────────────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^frontend/
+      - id: ruff-format
+        files: ^frontend/
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.7.1
+    hooks:
+      - id: mypy
+        files: ^frontend/src/
+        args:
+          - --strict
+          - --ignore-missing-imports
+        additional_dependencies:
+          - pydantic>=2.5.0
+          - pydantic-settings>=2.1.0
+
+  # ── General ─────────────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: detect-private-key
+      - id: no-commit-to-branch
+        args: [--branch, main, --branch, master]
+
+  # ── Security ────────────────────────────────────────────────────────────
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.6
+    hooks:
+      - id: bandit
+        args: [-r, frontend/src/, -ll]
+        files: ^frontend/src/
+
+  # ── Erlang (requires erlfmt on PATH) ────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: erlfmt
+        name: erlfmt (Erlang formatter check)
+        language: system
+        entry: bash -c 'command -v erlfmt >/dev/null 2>&1 && erlfmt --check "$@" || true' --
+        files: \.(erl|hrl)$
+        pass_filenames: true

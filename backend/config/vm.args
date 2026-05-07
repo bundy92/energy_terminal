@@ -1,0 +1,7 @@
+-name energy_gateway@127.0.0.1
+-setcookie energy_terminal_cookie
+-heart
++K true
++A 16
++P 1048576
+-env ERL_MAX_ETS_TABLES 2048

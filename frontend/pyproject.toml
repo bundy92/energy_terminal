@@ -1,0 +1,87 @@
+[build-system]
+requires      = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name        = "energy-terminal"
+version     = "0.1.0"
+description = "Bloomberg-style energy market analysis desktop terminal"
+requires-python = ">=3.11"
+
+dependencies = [
+    # GUI
+    "PyQt6>=6.6.0",
+    "PyQt6-Qt6>=6.6.0",
+    "pyqtgraph>=0.13.3",
+    "qasync>=0.27.0",
+
+    # Data & async
+    "websockets>=12.0",
+    "aiohttp>=3.9.0",
+    "yfinance>=0.2.36",
+
+    # Numerical / analytics
+    "numpy>=1.26.0",
+    "pandas>=2.1.0",
+    "scipy>=1.11.0",
+    "scikit-learn>=1.3.0",
+    "statsmodels>=0.14.0",
+
+    # Data validation & settings
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "tomllib>=2.0.1; python_version < '3.11'",
+
+    # Storage
+    "duckdb>=0.9.0",
+
+    # Charting (static/PDF export)
+    "matplotlib>=3.8.0",
+    "mplfinance>=0.12.10",
+
+    # Utilities
+    "structlog>=23.2.0",
+    "keyring>=24.3.0",
+    "python-dateutil>=2.8.2",
+    "pytz>=2023.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-qt>=4.3.0",
+    "pytest-cov>=4.1.0",
+    "hypothesis>=6.92.0",
+    "responses>=0.24.0",
+    "mypy>=1.7.0",
+    "ruff>=0.1.0",
+    "black>=23.11.0",
+    "pre-commit>=3.5.0",
+]
+
+[project.scripts]
+energy-terminal = "energy_terminal.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/energy_terminal"]
+
+[tool.mypy]
+strict               = true
+python_version       = "3.11"
+ignore_missing_imports = true
+
+[tool.ruff]
+target-version = "py311"
+line-length    = 100
+select         = ["E", "F", "W", "I", "N", "UP", "ANN", "B", "C4", "RET"]
+ignore         = ["ANN101", "ANN102"]
+
+[tool.pytest.ini_options]
+testpaths    = ["tests"]
+asyncio_mode = "auto"
+addopts      = "--cov=energy_terminal --cov-report=term-missing --cov-fail-under=85"
+
+[tool.coverage.run]
+source   = ["src"]
+omit     = ["*/tests/*", "*/migrations/*"]

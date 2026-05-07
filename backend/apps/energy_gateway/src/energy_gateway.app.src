@@ -1,0 +1,8 @@
+{application, energy_gateway, [
+    {description,  "Energy Market Terminal — OTP Data Gateway"},
+    {vsn,          "0.1.0"},
+    {registered,   [energy_gateway_sup, ets_cache, data_router, feed_registry, rate_limiter]},
+    {applications, [kernel, stdlib, crypto, ssl, inets, cowboy, hackney, lager]},
+    {mod,          {energy_gateway_app, []}},
+    {env,          []}
+]}.
