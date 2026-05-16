@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
+from collections.abc import Callable
 
+import pandas as pd
 import structlog
 import yfinance as yf
 
@@ -30,6 +31,8 @@ from energy_terminal.data.models import (
 
 log = structlog.get_logger(__name__)
 
+TickHandler = Callable[[Tick], None]
+
 # ---------------------------------------------------------------------------
 # Instrument catalogue
 # ---------------------------------------------------------------------------
@@ -37,42 +40,51 @@ log = structlog.get_logger(__name__)
 #: Default instrument list, mirroring the Erlang gateway configuration.
 DEFAULT_INSTRUMENTS: list[str] = [
     # Crude
-    "CL=F", "BZ=F",
+    "CL=F",
+    "BZ=F",
     # Natural Gas
     "NG=F",
     # Refined Products
-    "RB=F", "HO=F",
+    "RB=F",
+    "HO=F",
     # Carbon / Clean Energy ETFs
-    "ICLN", "XLE",
+    "ICLN",
+    "XLE",
     # FX
-    "EURUSD=X", "DX-Y.NYB",
+    "EURUSD=X",
+    "DX-Y.NYB",
     # Energy equities
-    "XOM", "CVX", "BP", "SHEL", "TTE",
+    "XOM",
+    "CVX",
+    "BP",
+    "SHEL",
+    "TTE",
     # Agricultural / feedstock crossovers
-    "ZC=F", "ZS=F",
+    "ZC=F",
+    "ZS=F",
     # Freight proxy
     "BDRY",
 ]
 
 #: Human-readable display names for known tickers.
 INSTRUMENT_NAMES: dict[str, str] = {
-    "CL=F":     "WTI Crude",
-    "BZ=F":     "Brent Crude",
-    "NG=F":     "Natural Gas (HH)",
-    "RB=F":     "RBOB Gasoline",
-    "HO=F":     "Heating Oil (ULSD)",
-    "ICLN":     "Clean Energy ETF",
-    "XLE":      "Energy Sector ETF",
+    "CL=F": "WTI Crude",
+    "BZ=F": "Brent Crude",
+    "NG=F": "Natural Gas (HH)",
+    "RB=F": "RBOB Gasoline",
+    "HO=F": "Heating Oil (ULSD)",
+    "ICLN": "Clean Energy ETF",
+    "XLE": "Energy Sector ETF",
     "EURUSD=X": "EUR/USD",
     "DX-Y.NYB": "USD Index",
-    "XOM":      "ExxonMobil",
-    "CVX":      "Chevron",
-    "BP":       "BP plc",
-    "SHEL":     "Shell plc",
-    "TTE":      "TotalEnergies",
-    "ZC=F":     "Corn Futures",
-    "ZS=F":     "Soybean Futures",
-    "BDRY":     "Dry Bulk ETF",
+    "XOM": "ExxonMobil",
+    "CVX": "Chevron",
+    "BP": "BP plc",
+    "SHEL": "Shell plc",
+    "TTE": "TotalEnergies",
+    "ZC=F": "Corn Futures",
+    "ZS=F": "Soybean Futures",
+    "BDRY": "Dry Bulk ETF",
 }
 
 
@@ -100,16 +112,16 @@ class DirectFeed:
         instruments: list[str] | None = None,
         poll_interval_s: float = 30.0,
     ) -> None:
-        self._instruments    = instruments or DEFAULT_INSTRUMENTS
-        self._poll_interval  = poll_interval_s
-        self._running        = False
-        self._tick_handlers: list[Any] = []
+        self._instruments = instruments or DEFAULT_INSTRUMENTS
+        self._poll_interval = poll_interval_s
+        self._running = False
+        self._tick_handlers: list[TickHandler] = []
 
     # ------------------------------------------------------------------
     # Handler registration
     # ------------------------------------------------------------------
 
-    def on_tick(self, handler: Any) -> None:
+    def on_tick(self, handler: TickHandler) -> None:
         """Register a tick callback (same signature as GatewayClient)."""
         self._tick_handlers.append(handler)
 
@@ -131,7 +143,7 @@ class DirectFeed:
 
     async def _poll_once(self) -> None:
         """Fetch latest quotes for all instruments and dispatch ticks."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             tickers = await loop.run_in_executor(None, self._fetch_quotes)
             for tick in tickers:
@@ -158,26 +170,92 @@ class DirectFeed:
         ticks: list[Tick] = []
         ts_ms = int(time.time() * 1000)
 
-        # Multi-ticker download returns MultiIndex columns
-        if isinstance(data.columns, __import__("pandas").MultiIndex):
+        if isinstance(data.columns, pd.MultiIndex):
             for sym in self._instruments:
-                try:
-                    row = data.xs(sym, axis=1, level=1).iloc[-1]
-                    tick = Tick(
-                        type=EventType.TICK,
-                        source=EventSource.DIRECT,
-                        symbol=sym,
-                        timestamp=ts_ms,
-                        open=float(row.get("Open", 0)),
-                        high=float(row.get("High", 0)),
-                        low=float(row.get("Low", 0)),
-                        close=float(row.get("Close", 0)),
-                        volume=int(row.get("Volume", 0)),
-                    )
+                tick = self._parse_bulk_quote(data, sym, ts_ms)
+                if tick is not None:
                     ticks.append(tick)
-                except Exception:  # noqa: BLE001
-                    pass
+
+        if ticks:
+            received = {tick.symbol for tick in ticks}
+            missing = [sym for sym in self._instruments if sym not in received]
+            if missing:
+                ticks.extend(self._fetch_quotes_singleton(ts_ms, symbols=missing))
+            return ticks
+
+        return self._fetch_quotes_singleton(ts_ms, symbols=self._instruments)
+
+    def _parse_bulk_quote(self, data: pd.DataFrame, sym: str, ts_ms: int) -> Tick | None:
+        try:
+            row = data.xs(sym, axis=1, level=1).iloc[-1]
+            if row.isnull().all():
+                return None
+            prev_close = float(row.get("Close", 0))
+            close = float(row.get("Close", 0))
+            open_ = float(row.get("Open", close))
+            high = float(row.get("High", close))
+            low = float(row.get("Low", close))
+            volume = int(row.get("Volume", 0))
+            change = close - prev_close
+            change_pct = (change / prev_close * 100) if prev_close else 0.0
+            return Tick(
+                type=EventType.TICK,
+                source=EventSource.DIRECT,
+                symbol=sym,
+                timestamp=ts_ms,
+                open=open_,
+                high=high,
+                low=low,
+                close=close,
+                volume=volume,
+                change=change,
+                change_pct=change_pct,
+            )
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _fetch_quotes_singleton(self, ts_ms: int, symbols: list[str] | None = None) -> list[Tick]:
+        ticks: list[Tick] = []
+        for sym in symbols or self._instruments:
+            tick = self._fetch_single_quote(sym, ts_ms)
+            if tick is not None:
+                ticks.append(tick)
         return ticks
+
+    def _fetch_single_quote(self, sym: str, ts_ms: int) -> Tick | None:
+        try:
+            ticker = yf.Ticker(sym)
+            info = ticker.fast_info
+            last = info.get("lastPrice") or info.get("previousClose")
+            if last is None:
+                last = info.get("regularMarketPreviousClose")
+            if last is None:
+                return None
+
+            prev_close = (
+                info.get("previousClose") or info.get("regularMarketPreviousClose") or float(last)
+            )
+            open_ = info.get("open") or float(last)
+            high = info.get("dayHigh") or float(last)
+            low = info.get("dayLow") or float(last)
+            volume = int(info.get("lastVolume", 0) or 0)
+            change = float(last) - float(prev_close)
+            change_pct = (change / float(prev_close) * 100) if prev_close else 0.0
+            return Tick(
+                type=EventType.TICK,
+                source=EventSource.DIRECT,
+                symbol=sym,
+                timestamp=ts_ms,
+                open=float(open_),
+                high=float(high),
+                low=float(low),
+                close=float(last),
+                volume=volume,
+                change=change,
+                change_pct=change_pct,
+            )
+        except Exception:  # noqa: BLE001
+            return None
 
     # ------------------------------------------------------------------
     # Historical OHLCV
@@ -207,10 +285,8 @@ class DirectFeed:
         list[OHLCVBar]
             List of OHLCV bars sorted ascending by timestamp.
         """
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None, self._fetch_ohlcv_sync, symbol, period, interval
-        )
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._fetch_ohlcv_sync, symbol, period, interval)
 
     def _fetch_ohlcv_sync(
         self,
@@ -224,14 +300,16 @@ class DirectFeed:
             df = ticker.history(period=period, interval=interval, auto_adjust=True)
             bars = []
             for ts, row in df.iterrows():
-                bars.append(OHLCVBar(
-                    timestamp=int(ts.timestamp() * 1000),
-                    open=float(row["Open"]),
-                    high=float(row["High"]),
-                    low=float(row["Low"]),
-                    close=float(row["Close"]),
-                    volume=int(row.get("Volume", 0)),
-                ))
+                bars.append(
+                    OHLCVBar(
+                        timestamp=int(ts.timestamp() * 1000),
+                        open=float(row["Open"]),
+                        high=float(row["High"]),
+                        low=float(row["Low"]),
+                        close=float(row["Close"]),
+                        volume=int(row.get("Volume", 0)),
+                    )
+                )
             return bars
         except Exception as exc:  # noqa: BLE001
             log.error("yfinance history error", symbol=symbol, exc=str(exc))

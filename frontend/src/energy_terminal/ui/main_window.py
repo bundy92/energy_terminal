@@ -29,41 +29,42 @@ Keybindings
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+import structlog
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtGui import QCloseEvent, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMainWindow,
     QSplitter,
-    QStatusBar,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
-import structlog
-
-from energy_terminal.data.alerts import AlertEngine
+from energy_terminal.data.alerts import AlertEngine, AlertFired
 from energy_terminal.data.cache import TimeSeriesCache
 from energy_terminal.data.client import GatewayClient
 from energy_terminal.data.direct_feed import DirectFeed
-from energy_terminal.ui.theme import PALETTE
-from energy_terminal.ui.panels.market_panel import MarketPanel
-from energy_terminal.ui.panels.chart_panel import ChartPanel
-from energy_terminal.ui.panels.watchlist_panel import WatchlistPanel
-from energy_terminal.ui.panels.analytics_panel import AnalyticsPanel
-from energy_terminal.ui.panels.fundamental_panel import FundamentalPanel
-from energy_terminal.ui.panels.weather_panel import WeatherPanel
-from energy_terminal.ui.panels.risk_panel import RiskPanel
+from energy_terminal.data.models import FundamentalReading, MacroReading, Tick, WeatherReading
 from energy_terminal.ui.panels.alert_panel import AlertPanel
+from energy_terminal.ui.panels.analytics_panel import AnalyticsPanel
+from energy_terminal.ui.panels.base_panel import BasePanel
+from energy_terminal.ui.panels.chart_panel import ChartPanel
+from energy_terminal.ui.panels.fundamental_panel import FundamentalPanel
+from energy_terminal.ui.panels.market_panel import MarketPanel
+from energy_terminal.ui.panels.risk_panel import RiskPanel
+from energy_terminal.ui.panels.watchlist_panel import WatchlistPanel
+from energy_terminal.ui.panels.weather_panel import WeatherPanel
+from energy_terminal.ui.theme import PALETTE
 
 log = structlog.get_logger(__name__)
 
 
-class MainWindow(QMainWindow):
+class MainWindow(QMainWindow):  # type: ignore[misc]
     """Top-level Bloomberg-style terminal window.
 
     Parameters
@@ -76,9 +77,9 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
 
         # Core subsystems
-        self._cache   = TimeSeriesCache()
-        self._alerts  = AlertEngine()
-        self._client  = GatewayClient()
+        self._cache = TimeSeriesCache()
+        self._alerts = AlertEngine()
+        self._client = GatewayClient()
         self._fallback = DirectFeed()
 
         # Wire tick handlers
@@ -123,8 +124,9 @@ class MainWindow(QMainWindow):
         """Build the amber Bloomberg-style command input bar."""
         bar = QWidget()
         bar.setFixedHeight(36)
-        bar.setStyleSheet(f"background-color: {PALETTE.BG_HEADER}; "
-                          f"border-bottom: 1px solid {PALETTE.AMBER};")
+        bar.setStyleSheet(
+            f"background-color: {PALETTE.BG_HEADER}; " f"border-bottom: 1px solid {PALETTE.AMBER};"
+        )
 
         h = QHBoxLayout(bar)
         h.setContentsMargins(8, 0, 8, 0)
@@ -132,8 +134,9 @@ class MainWindow(QMainWindow):
 
         # Logo / brand
         logo = QLabel("⬡ ENERGY TERMINAL")
-        logo.setStyleSheet(f"color: {PALETTE.AMBER}; font-weight: bold; "
-                           f"font-size: 13px; letter-spacing: 2px;")
+        logo.setStyleSheet(
+            f"color: {PALETTE.AMBER}; font-weight: bold; " f"font-size: 13px; letter-spacing: 2px;"
+        )
         h.addWidget(logo)
 
         h.addSpacing(20)
@@ -150,16 +153,16 @@ class MainWindow(QMainWindow):
 
         # Connection indicator
         self._conn_label = QLabel("● DISCONNECTED")
-        self._conn_label.setStyleSheet(f"color: {PALETTE.NEGATIVE}; "
-                                       f"font-size: 11px; font-weight: bold;")
+        self._conn_label.setStyleSheet(
+            f"color: {PALETTE.NEGATIVE}; " f"font-size: 11px; font-weight: bold;"
+        )
         h.addWidget(self._conn_label)
 
         h.addSpacing(16)
 
         # Clock
         self._clock_label = QLabel("")
-        self._clock_label.setStyleSheet(f"color: {PALETTE.FG_SECONDARY}; "
-                                        f"font-size: 11px;")
+        self._clock_label.setStyleSheet(f"color: {PALETTE.FG_SECONDARY}; " f"font-size: 11px;")
         h.addWidget(self._clock_label)
 
         return bar
@@ -173,24 +176,34 @@ class MainWindow(QMainWindow):
             Outer vertical splitter containing two horizontal splitters.
         """
         # Instantiate all panels
-        self._panel_market      = MarketPanel(self._cache)
-        self._panel_chart       = ChartPanel(self._cache)
-        self._panel_watchlist   = WatchlistPanel(self._cache, self._alerts)
-        self._panel_analytics   = AnalyticsPanel(self._cache)
+        self._panel_market = MarketPanel(self._cache)
+        self._panel_chart = ChartPanel(self._cache)
+        self._panel_watchlist = WatchlistPanel(self._cache, self._alerts)
+        self._panel_analytics = AnalyticsPanel(self._cache)
         self._panel_fundamental = FundamentalPanel(self._cache)
-        self._panel_weather     = WeatherPanel(self._cache)
-        self._panel_risk        = RiskPanel(self._cache)
-        self._panel_alerts      = AlertPanel(self._alerts)
+        self._panel_weather = WeatherPanel(self._cache)
+        self._panel_risk = RiskPanel(self._cache)
+        self._panel_alerts = AlertPanel(self._alerts)
 
-        # Default layout: market | chart (top row), watchlist | analytics (bottom)
+        # Default layout: market | chart (top row), watchlist | active panel stack (bottom)
         top = QSplitter(Qt.Orientation.Horizontal)
         top.addWidget(self._panel_market)
         top.addWidget(self._panel_chart)
         top.setSizes([600, 1000])
 
+        self._panel_stack = QStackedWidget()
+        for panel in (
+            self._panel_analytics,
+            self._panel_fundamental,
+            self._panel_weather,
+            self._panel_risk,
+            self._panel_alerts,
+        ):
+            self._panel_stack.addWidget(panel)
+
         bot = QSplitter(Qt.Orientation.Horizontal)
         bot.addWidget(self._panel_watchlist)
-        bot.addWidget(self._panel_analytics)
+        bot.addWidget(self._panel_stack)
         bot.setSizes([600, 1000])
 
         outer = QSplitter(Qt.Orientation.Vertical)
@@ -202,15 +215,15 @@ class MainWindow(QMainWindow):
 
     def _build_status_bar(self) -> None:
         """Configure the bottom status bar."""
-        sb: QStatusBar = self.statusBar()  # type: ignore[assignment]
+        sb = self.statusBar()
+        assert sb is not None
 
-        self._status_feed  = QLabel("FEED: —")
+        self._status_feed = QLabel("FEED: —")
         self._status_delay = QLabel("DELAY: —")
         self._status_cache = QLabel("CACHE: —")
-        self._status_tz    = QLabel("UTC")
+        self._status_tz = QLabel("UTC")
 
-        for lbl in (self._status_feed, self._status_delay,
-                    self._status_cache, self._status_tz):
+        for lbl in (self._status_feed, self._status_delay, self._status_cache, self._status_tz):
             lbl.setStyleSheet(f"color: {PALETTE.FG_SECONDARY}; font-size: 10px;")
             sb.addPermanentWidget(lbl)
 
@@ -252,7 +265,7 @@ class MainWindow(QMainWindow):
 
     def _tick_clock(self) -> None:
         """Update the clock display."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         self._clock_label.setText(now.strftime("%Y-%m-%d  %H:%M:%S UTC"))
 
     # ------------------------------------------------------------------
@@ -261,52 +274,95 @@ class MainWindow(QMainWindow):
 
     async def start_async(self) -> None:
         """Launch async subsystems (WebSocket client, fallback poller)."""
+        self._fallback.on_tick(self._on_tick)
         asyncio.create_task(self._run_gateway())
 
     async def _run_gateway(self) -> None:
         """Connect to the Erlang gateway with fallback to direct feed."""
+        asyncio.create_task(self._client.connect())
+        fallback_task = None
+
+        async def start_fallback() -> None:
+            nonlocal fallback_task
+            if fallback_task is None:
+                self._set_connected(False)
+                log.warning("Gateway unavailable — switching to direct feed")
+                fallback_task = asyncio.create_task(self._fallback.start_polling())
+
+        async def stop_fallback() -> None:
+            nonlocal fallback_task
+            if fallback_task is not None:
+                await self._fallback.stop()
+                fallback_task = None
+
+        # Wait briefly for an initial gateway connection. If it does not
+        # connect quickly, start the direct fallback so the UI shows data.
+        for _ in range(8):
+            if self._client.is_connected:
+                self._set_connected(True)
+                await stop_fallback()
+                break
+            await asyncio.sleep(1.0)
+        else:
+            await start_fallback()
+
+        # Wait for the first tick or fallback if the gateway remains silent.
+        for _ in range(10):
+            if self._client.is_connected and getattr(self._client, "_last_event_ts", 0) > 0:
+                break
+            await asyncio.sleep(1.0)
+        if self._client.is_connected and getattr(self._client, "_last_event_ts", 0) == 0:
+            await start_fallback()
+
+        # Monitor gateway reconnects/stale state and keep fallback in sync.
         try:
-            self._set_connected(True)
-            await self._client.connect()
-        except Exception:  # noqa: BLE001
-            self._set_connected(False)
-            log.warning("Gateway unavailable — switching to direct feed")
-            self._fallback.on_tick(self._on_tick)
-            await self._fallback.start_polling()
+            while True:
+                await asyncio.sleep(2.0)
+                if self._client.is_connected and not self._client.is_stale:
+                    await stop_fallback()
+                    self._set_connected(True)
+                else:
+                    await start_fallback()
+        finally:
+            await stop_fallback()
 
     # ------------------------------------------------------------------
     # Data event handlers
     # ------------------------------------------------------------------
 
-    def _on_tick(self, tick: object) -> None:
+    def _on_tick(self, tick: Tick) -> None:
         """Dispatch a price tick to all panels."""
-        self._panel_market.on_tick(tick)       # type: ignore[arg-type]
-        self._panel_watchlist.on_tick(tick)    # type: ignore[arg-type]
-        self._panel_chart.on_tick(tick)        # type: ignore[arg-type]
-        self._alerts.evaluate(tick)            # type: ignore[arg-type]
+        self._panel_market.on_tick(tick)
+        self._panel_watchlist.on_tick(tick)
+        self._panel_chart.on_tick(tick)
+        self._alerts.evaluate(tick)
         self._update_status_feed(tick)
 
-    def _on_fundamental(self, reading: object) -> None:
+    def _on_fundamental(self, reading: FundamentalReading) -> None:
         """Dispatch a fundamental reading to relevant panels."""
-        self._panel_fundamental.on_reading(reading)  # type: ignore[arg-type]
-        self._panel_analytics.on_fundamental(reading) # type: ignore[arg-type]
+        self._panel_fundamental.on_reading(reading)
+        self._panel_analytics.on_fundamental(reading)
 
-    def _on_weather(self, reading: object) -> None:
+    def _on_weather(self, reading: WeatherReading) -> None:
         """Dispatch a weather reading to the weather panel."""
-        self._panel_weather.on_reading(reading)  # type: ignore[arg-type]
+        self._panel_weather.on_reading(reading)
 
-    def _on_macro(self, reading: object) -> None:
+    def _on_macro(self, reading: MacroReading) -> None:
         """Dispatch a macro reading."""
-        self._panel_analytics.on_macro(reading)  # type: ignore[arg-type]
+        self._panel_analytics.on_macro(reading)
 
-    def _on_alert_fired(self, event: object) -> None:
+    def _on_alert_fired(self, event: AlertFired) -> None:
         """Handle a fired alert — flash status bar and update alert panel."""
-        self._panel_alerts.on_alert_fired(event)  # type: ignore[arg-type]
-        self.statusBar().showMessage(  # type: ignore[union-attr]
-            f"⚠  ALERT: {getattr(event, 'alert', {})}", 8000  # type: ignore[arg-type]
+        self._panel_alerts.on_alert_fired(event)
+        sb = self.statusBar()
+        assert sb is not None
+        sb.showMessage(
+            f"⚠  ALERT: {event.alert}",
+            8000,
         )
 
     # ------------------------------------------------------------------
+
     # Command bar
     # ------------------------------------------------------------------
 
@@ -319,12 +375,17 @@ class MainWindow(QMainWindow):
 
         # Simple ticker navigation: "CL1 <GO>" → load CL=F chart
         ticker_map = {
-            "CL1": "CL=F", "CO1": "BZ=F", "NG1": "NG=F",
-            "RB1": "RB=F", "HO1": "HO=F",
+            "CL1": "CL=F",
+            "CO1": "BZ=F",
+            "NG1": "NG=F",
+            "RB1": "RB=F",
+            "HO1": "HO=F",
         }
         symbol = ticker_map.get(raw, raw)
         self._panel_chart.load_symbol(symbol)
-        self.statusBar().showMessage(f"Loaded: {symbol}", 3000)  # type: ignore[union-attr]
+        sb = self.statusBar()
+        assert sb is not None
+        sb.showMessage(f"Loaded: {symbol}", 3000)
         log.info("Command bar navigation", input=raw, resolved=symbol)
 
     # ------------------------------------------------------------------
@@ -332,22 +393,45 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _swap_panel(self, panel_name: str) -> None:
-        """Bring a panel to the foreground in the bottom-left slot."""
-        panel_map = {
-            "market":      self._panel_market,
-            "chart":       self._panel_chart,
-            "watchlist":   self._panel_watchlist,
-            "analytics":   self._panel_analytics,
-            "fundamental": self._panel_fundamental,
-            "weather":     self._panel_weather,
-            "risk":        self._panel_risk,
-            "alerts":      self._panel_alerts,
-        }
-        panel = panel_map.get(panel_name)
-        if panel:
-            panel.show()
-            panel.raise_()
-        self.statusBar().showMessage(f"Panel: {panel_name.upper()}", 2000)  # type: ignore[union-attr]
+        """Switch the active panel, using the stacked bottom-right pane for extra views."""
+        # Always mark all panels inactive first
+        for panel in (
+            self._panel_market,
+            self._panel_chart,
+            self._panel_watchlist,
+            self._panel_analytics,
+            self._panel_fundamental,
+            self._panel_weather,
+            self._panel_risk,
+            self._panel_alerts,
+        ):
+            panel.set_active(False)
+
+        if panel_name == "market":
+            self._panel_market.set_active(True)
+            self._panel_market.raise_()
+        elif panel_name == "chart":
+            self._panel_chart.set_active(True)
+            self._panel_chart.raise_()
+        elif panel_name == "watchlist":
+            self._panel_watchlist.set_active(True)
+            self._panel_watchlist.raise_()
+        else:
+            stack_index = {
+                "analytics": 0,
+                "fundamental": 1,
+                "weather": 2,
+                "risk": 3,
+                "alerts": 4,
+            }.get(panel_name, 0)
+            self._panel_stack.setCurrentIndex(stack_index)
+            current = self._panel_stack.currentWidget()
+            if isinstance(current, BasePanel):
+                current.set_active(True)
+
+            sb = self.statusBar()
+            assert sb is not None
+            sb.showMessage(f"Panel: {panel_name.upper()}", 2000)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -374,15 +458,17 @@ class MainWindow(QMainWindow):
 
     def _refresh_feeds(self) -> None:
         """Force a manual poll of all connected feeds."""
-        self.statusBar().showMessage("Refreshing all feeds…", 3000)  # type: ignore[union-attr]
+        sb = self.statusBar()
+        assert sb is not None
+        sb.showMessage("Refreshing all feeds…", 3000)
         log.info("Manual feed refresh triggered")
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def closeEvent(self, event: object) -> None:  # type: ignore[override]
+    def closeEvent(self, event: QCloseEvent | None) -> None:  # noqa: N802
         """Clean up resources on close."""
         self._cache.close()
         log.info("Energy Terminal closed")
-        super().closeEvent(event)  # type: ignore[arg-type]
+        super().closeEvent(event)

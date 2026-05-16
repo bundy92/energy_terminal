@@ -10,18 +10,18 @@ Renders a candlestick price chart using PyQtGraph with:
 
 from __future__ import annotations
 
+import asyncio
+
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
-from PyQt6.QtCore import Qt
+import structlog
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
-    QComboBox,
     QHBoxLayout,
     QPushButton,
     QWidget,
 )
-
-import structlog
 
 from energy_terminal.analytics.technical import (
     bollinger_bands,
@@ -31,18 +31,17 @@ from energy_terminal.analytics.technical import (
     sma,
 )
 from energy_terminal.data.cache import TimeSeriesCache
+from energy_terminal.data.direct_feed import DirectFeed
 from energy_terminal.data.models import Tick
 from energy_terminal.ui.panels.base_panel import BasePanel
 from energy_terminal.ui.theme import PALETTE
 
 log = structlog.get_logger(__name__)
 
-pg.setConfigOptions(antialias=True, background=PALETTE.BG_PANEL,
-                    foreground=PALETTE.FG_SECONDARY)
+pg.setConfigOptions(antialias=True, background=PALETTE.BG_PANEL, foreground=PALETTE.FG_SECONDARY)
 
 _TIMEFRAMES = ["1D", "1W", "1M", "3M", "6M", "1Y", "2Y"]
-_TF_DAYS    = {"1D": 1, "1W": 7, "1M": 30, "3M": 90,
-               "6M": 182, "1Y": 365, "2Y": 730}
+_TF_DAYS = {"1D": 1, "1W": 7, "1M": 30, "3M": 90, "6M": 182, "1Y": 365, "2Y": 730}
 
 
 class ChartPanel(BasePanel):
@@ -56,9 +55,9 @@ class ChartPanel(BasePanel):
 
     def __init__(self, cache: TimeSeriesCache, parent: object = None) -> None:
         super().__init__(title="CHART", subtitle="—")
-        self._cache   = cache
-        self._symbol  = "CL=F"
-        self._tf      = "1M"
+        self._cache = cache
+        self._symbol = "CL=F"
+        self._tf = "1M"
         self._df: pd.DataFrame = pd.DataFrame()
 
         self._build_controls()
@@ -72,7 +71,7 @@ class ChartPanel(BasePanel):
     def _build_controls(self) -> None:
         """Build the timeframe selector and overlay toggle row."""
         row = QWidget()
-        h   = QHBoxLayout(row)
+        h = QHBoxLayout(row)
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(4)
 
@@ -89,9 +88,13 @@ class ChartPanel(BasePanel):
         h.addSpacing(12)
 
         # Overlay toggles
-        for label, attr in [("BB", "_show_bb"), ("SMA20", "_show_sma20"),
-                             ("EMA12", "_show_ema12"), ("RSI", "_show_rsi"),
-                             ("MACD", "_show_macd")]:
+        for label, attr in [
+            ("BB", "_show_bb"),
+            ("SMA20", "_show_sma20"),
+            ("EMA12", "_show_ema12"),
+            ("RSI", "_show_rsi"),
+            ("MACD", "_show_macd"),
+        ]:
             setattr(self, attr, False)
             btn = QPushButton(label)
             btn.setFixedWidth(46)
@@ -152,7 +155,24 @@ class ChartPanel(BasePanel):
         """
         self._symbol = symbol
         self.set_subtitle(symbol)
+        self._clear_chart()
         self._refresh_chart()
+        if self._df.empty:
+            QTimer.singleShot(0, lambda: asyncio.create_task(self._fetch_history(symbol)))
+
+    async def _fetch_history(self, symbol: str) -> None:
+        """Fetch chart history for a symbol when no cache data exists."""
+        bars = await DirectFeed().fetch_ohlcv(symbol, period="1y", interval="1d")
+        if bars:
+            self._cache.write_ohlcv(symbol, bars)
+            if self._symbol == symbol:
+                self._refresh_chart()
+
+    def _clear_chart(self) -> None:
+        """Clear all chart plots when data is not yet available."""
+        self._price_plot.clear()
+        self._vol_plot.clear()
+        self._ind_plot.clear()
 
     def on_tick(self, tick: Tick) -> None:
         """Update the latest price bar on a live tick.
@@ -184,72 +204,67 @@ class ChartPanel(BasePanel):
         self._vol_plot.clear()
         self._ind_plot.clear()
 
-        close  = self._df["close"].to_numpy()
-        high   = self._df["high"].to_numpy()
-        low    = self._df["low"].to_numpy()
+        close = self._df["close"].to_numpy()
+        high = self._df["high"].to_numpy()
+        low = self._df["low"].to_numpy()
         volume = self._df["volume"].to_numpy()
-        xs     = np.arange(len(close))
+        xs = np.arange(len(close))
 
         # Candlestick approximation: fill between open and close per bar
         opens = self._df["open"].to_numpy()
-        for i, (o, c, h, l) in enumerate(zip(opens, close, high, low)):
+        for i, (o, c, h, low_value) in enumerate(zip(opens, close, high, low, strict=False)):
             colour = PALETTE.POSITIVE if c >= o else PALETTE.NEGATIVE
             # High-low wick
-            self._price_plot.plot([i, i], [l, h],
-                                  pen=pg.mkPen(colour, width=1))
+            self._price_plot.plot([i, i], [low_value, h], pen=pg.mkPen(colour, width=1))
             # Body
-            self._price_plot.plot([i, i], [o, c],
-                                  pen=pg.mkPen(colour, width=4))
+            self._price_plot.plot([i, i], [o, c], pen=pg.mkPen(colour, width=4))
 
         # Volume bars
-        colours = [PALETTE.POSITIVE if close[i] >= opens[i] else PALETTE.NEGATIVE
-                   for i in range(len(close))]
-        bg = pg.BarGraphItem(x=xs, height=volume, width=0.8,
-                             brushes=[pg.mkBrush(c) for c in colours])
+        colours = [
+            PALETTE.POSITIVE if close[i] >= opens[i] else PALETTE.NEGATIVE
+            for i in range(len(close))
+        ]
+        bg = pg.BarGraphItem(
+            x=xs, height=volume, width=0.8, brushes=[pg.mkBrush(c) for c in colours]
+        )
         self._vol_plot.addItem(bg)
 
         # Overlays
         if self._show_sma20 and len(close) >= 20:
             s = sma(close, 20)
-            self._price_plot.plot(xs, s,
-                pen=pg.mkPen(PALETTE.SERIES[1], width=1.5), name="SMA20")
+            self._price_plot.plot(xs, s, pen=pg.mkPen(PALETTE.SERIES[1], width=1.5), name="SMA20")
 
         if self._show_ema12 and len(close) >= 12:
             e = ema(close, 12)
-            self._price_plot.plot(xs, e,
-                pen=pg.mkPen(PALETTE.SERIES[2], width=1.5), name="EMA12")
+            self._price_plot.plot(xs, e, pen=pg.mkPen(PALETTE.SERIES[2], width=1.5), name="EMA12")
 
         if self._show_bb and len(close) >= 20:
             upper, mid, lower = bollinger_bands(close, 20)
-            kw = dict(width=1, style=Qt.PenStyle.DashLine)
-            self._price_plot.plot(xs, upper,
-                pen=pg.mkPen(PALETTE.SERIES[3], **kw))
-            self._price_plot.plot(xs, lower,
-                pen=pg.mkPen(PALETTE.SERIES[3], **kw))
+            kw = {"width": 1, "style": Qt.PenStyle.DashLine}
+            self._price_plot.plot(xs, upper, pen=pg.mkPen(PALETTE.SERIES[3], **kw))
+            self._price_plot.plot(xs, lower, pen=pg.mkPen(PALETTE.SERIES[3], **kw))
 
         # RSI / MACD subpanel
         if self._show_rsi and len(close) >= 15:
             r = rsi(close, 14)
             self._ind_plot.clear()
-            self._ind_plot.plot(xs, r,
-                pen=pg.mkPen(PALETTE.AMBER, width=1.5))
-            self._ind_plot.addLine(y=70, pen=pg.mkPen(PALETTE.NEGATIVE,
-                                                        style=Qt.PenStyle.DashLine))
-            self._ind_plot.addLine(y=30, pen=pg.mkPen(PALETTE.POSITIVE,
-                                                        style=Qt.PenStyle.DashLine))
+            self._ind_plot.plot(xs, r, pen=pg.mkPen(PALETTE.AMBER, width=1.5))
+            self._ind_plot.addLine(y=70, pen=pg.mkPen(PALETTE.NEGATIVE, style=Qt.PenStyle.DashLine))
+            self._ind_plot.addLine(y=30, pen=pg.mkPen(PALETTE.POSITIVE, style=Qt.PenStyle.DashLine))
             self._ind_plot.show()
 
         elif self._show_macd and len(close) >= 35:
             ml, sl, hist = macd(close)
             self._ind_plot.clear()
-            self._ind_plot.plot(xs, ml,
-                pen=pg.mkPen(PALETTE.AMBER, width=1.5), name="MACD")
-            self._ind_plot.plot(xs, sl,
-                pen=pg.mkPen(PALETTE.CYAN, width=1), name="Signal")
+            self._ind_plot.plot(xs, ml, pen=pg.mkPen(PALETTE.AMBER, width=1.5), name="MACD")
+            self._ind_plot.plot(xs, sl, pen=pg.mkPen(PALETTE.CYAN, width=1), name="Signal")
             hist_item = pg.BarGraphItem(
-                x=xs, height=hist, width=0.8,
-                brushes=[pg.mkBrush(PALETTE.POSITIVE if v >= 0
-                                    else PALETTE.NEGATIVE) for v in hist]
+                x=xs,
+                height=hist,
+                width=0.8,
+                brushes=[
+                    pg.mkBrush(PALETTE.POSITIVE if v >= 0 else PALETTE.NEGATIVE) for v in hist
+                ],
             )
             self._ind_plot.addItem(hist_item)
             self._ind_plot.show()

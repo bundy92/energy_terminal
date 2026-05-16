@@ -34,7 +34,7 @@ from PyQt6.QtWidgets import (
 from energy_terminal.ui.theme import PALETTE
 
 
-class BasePanel(QWidget):
+class BasePanel(QWidget):  # type: ignore[misc]
     """Bloomberg-style panel with amber header chrome.
 
     Parameters
@@ -55,8 +55,8 @@ class BasePanel(QWidget):
     ) -> None:
         super().__init__(parent)
 
-        self._title    = title.upper()
-        self._stale    = False
+        self._title = title.upper()
+        self._stale = False
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(1, 1, 1, 1)
@@ -77,9 +77,7 @@ class BasePanel(QWidget):
 
         # Content area — panels add their widgets here
         self.content_area = QWidget()
-        self.content_area.setStyleSheet(
-            f"background-color: {PALETTE.BG_PANEL};"
-        )
+        self.content_area.setStyleSheet(f"background-color: {PALETTE.BG_PANEL};")
         self.content_layout = QVBoxLayout(self.content_area)
         self.content_layout.setContentsMargins(4, 4, 4, 4)
         self.content_layout.setSpacing(4)
@@ -103,8 +101,7 @@ class BasePanel(QWidget):
         self._title_label = QLabel(title.upper())
         self._title_label.setObjectName("panel_header")
         self._title_label.setStyleSheet(
-            f"color: {PALETTE.AMBER}; font-weight: bold; "
-            f"font-size: 11px; letter-spacing: 1px;"
+            f"color: {PALETTE.AMBER}; font-weight: bold; " f"font-size: 11px; letter-spacing: 1px;"
         )
         h.addWidget(self._title_label)
 
@@ -113,9 +110,7 @@ class BasePanel(QWidget):
         # Subtitle (right-aligned, e.g. current symbol)
         self._subtitle_label = QLabel(subtitle)
         self._subtitle_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self._subtitle_label.setStyleSheet(
-            f"color: {PALETTE.FG_SECONDARY}; font-size: 10px;"
-        )
+        self._subtitle_label.setStyleSheet(f"color: {PALETTE.FG_SECONDARY}; font-size: 10px;")
         h.addWidget(self._subtitle_label)
 
         # Stale indicator (hidden by default)
@@ -150,7 +145,7 @@ class BasePanel(QWidget):
         stale : bool
             ``True`` to show the amber ⚠ STALE badge.
         """
-        self._stale       = stale
+        self._stale = stale
         self._stale_label.setVisible(stale)
 
     def set_active(self, active: bool) -> None:

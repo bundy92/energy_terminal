@@ -43,6 +43,7 @@ repos:
       - id: bandit
         args: [-r, frontend/src/, -ll]
         files: ^frontend/src/
+        pass_filenames: false
 
   # ── Erlang (requires erlfmt on PATH) ────────────────────────────────────
   - repo: local

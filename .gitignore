@@ -1,0 +1,14 @@
+# Build artifacts
+backend/_build/
+backend/log/
+
+# Python artifacts
+*.pyc
+**/__pycache__/
+
+# Editor and environment
+.vscode/
+frontend/.venv/
+
+# Backend dependency lockfiles
+backend/rebar.lock

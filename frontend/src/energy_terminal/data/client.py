@@ -27,6 +27,7 @@ from typing import Any
 import structlog
 import websockets
 from websockets.exceptions import ConnectionClosed, WebSocketException
+from websockets.legacy.protocol import WebSocketClientProtocol
 
 from energy_terminal.config import settings
 from energy_terminal.data.models import (
@@ -41,10 +42,10 @@ from energy_terminal.data.models import (
 log = structlog.get_logger(__name__)
 
 # Type aliases for handler callbacks
-TickHandler        = Callable[[Tick], None]
+TickHandler = Callable[[Tick], None]
 FundamentalHandler = Callable[[FundamentalReading], None]
-WeatherHandler     = Callable[[WeatherReading], None]
-MacroHandler       = Callable[[MacroReading], None]
+WeatherHandler = Callable[[WeatherReading], None]
+MacroHandler = Callable[[MacroReading], None]
 
 
 class GatewayClient:
@@ -68,18 +69,18 @@ class GatewayClient:
         url: str | None = None,
         reconnect_delay: float | None = None,
     ) -> None:
-        self._url              = url or settings.gateway_url
-        self._base_delay       = reconnect_delay or settings.gateway_reconnect_delay_s
-        self._ws: Any          = None
-        self._running          = False
-        self._connected        = False
-        self._last_event_ts    = 0.0
-        self._staleness_secs   = 120.0
+        self._url = url or settings.gateway_url
+        self._base_delay = reconnect_delay or settings.gateway_reconnect_delay_s
+        self._ws: Any = None
+        self._running = False
+        self._connected = False
+        self._last_event_ts = 0.0
+        self._staleness_secs = 120.0
 
-        self._tick_handlers:        list[TickHandler]        = []
+        self._tick_handlers: list[TickHandler] = []
         self._fundamental_handlers: list[FundamentalHandler] = []
-        self._weather_handlers:     list[WeatherHandler]     = []
-        self._macro_handlers:       list[MacroHandler]       = []
+        self._weather_handlers: list[WeatherHandler] = []
+        self._macro_handlers: list[MacroHandler] = []
 
     # ------------------------------------------------------------------
     # Handler registration
@@ -129,17 +130,16 @@ class GatewayClient:
                     ping_timeout=10,
                     open_timeout=10,
                 ) as ws:
-                    self._ws        = ws
+                    self._ws = ws
                     self._connected = True
-                    delay           = self._base_delay   # reset on success
+                    delay = self._base_delay  # reset on success
                     log.info("Gateway connected")
                     await self._receive_loop(ws)
 
             except (ConnectionClosed, WebSocketException, OSError) as exc:
                 self._connected = False
-                self._ws        = None
-                log.warning("Gateway disconnected", reason=str(exc),
-                            retry_in=delay)
+                self._ws = None
+                log.warning("Gateway disconnected", reason=str(exc), retry_in=delay)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 60.0)
 
@@ -180,7 +180,7 @@ class GatewayClient:
     # Internal receive loop
     # ------------------------------------------------------------------
 
-    async def _receive_loop(self, ws: Any) -> None:
+    async def _receive_loop(self, ws: WebSocketClientProtocol) -> None:
         """Read messages until the connection closes."""
         async for raw in ws:
             self._last_event_ts = time.time()
@@ -192,10 +192,10 @@ class GatewayClient:
     def _dispatch(self, msg: dict[str, Any]) -> None:
         """Route a parsed message to the appropriate handlers."""
         event_type = msg.get("type")
-        payload    = msg.get("payload", {})
+        payload = msg.get("payload", {})
         source_str = msg.get("source", "direct")
-        symbol     = msg.get("symbol", "")
-        timestamp  = msg.get("timestamp", int(time.time() * 1000))
+        symbol = msg.get("symbol", "")
+        timestamp = msg.get("timestamp", int(time.time() * 1000))
 
         try:
             source = EventSource(source_str)
@@ -204,7 +204,9 @@ class GatewayClient:
 
         if event_type == EventType.TICK:
             tick = Tick(
-                source=source, symbol=symbol, timestamp=timestamp,
+                source=source,
+                symbol=symbol,
+                timestamp=timestamp,
                 open=payload.get("open", 0.0),
                 high=payload.get("high", 0.0),
                 low=payload.get("low", 0.0),
@@ -213,38 +215,44 @@ class GatewayClient:
                 change=payload.get("change", 0.0),
                 change_pct=payload.get("change_pct", 0.0),
             )
-            for h in self._tick_handlers:
-                h(tick)
+            for tick_handler in self._tick_handlers:
+                tick_handler(tick)
 
         elif event_type == EventType.FUNDAMENTAL:
-            reading = FundamentalReading(
-                source=source, symbol=symbol, timestamp=timestamp,
+            fundamental_reading = FundamentalReading(
+                source=source,
+                symbol=symbol,
+                timestamp=timestamp,
                 series=payload.get("series", symbol),
                 value=payload.get("value"),
                 period=payload.get("period", ""),
                 unit=payload.get("unit", ""),
             )
-            for h in self._fundamental_handlers:
-                h(reading)
+            for fundamental_handler in self._fundamental_handlers:
+                fundamental_handler(fundamental_reading)
 
         elif event_type == EventType.WEATHER:
-            reading = WeatherReading(
-                source=source, symbol=symbol, timestamp=timestamp,
+            weather_reading = WeatherReading(
+                source=source,
+                symbol=symbol,
+                timestamp=timestamp,
                 location=payload.get("location", symbol),
                 temp_c=payload.get("temp_c", 0.0),
                 hdd=payload.get("hdd", 0.0),
                 cdd=payload.get("cdd", 0.0),
                 forecast_7d=payload.get("forecast_7d", []),
             )
-            for h in self._weather_handlers:
-                h(reading)
+            for weather_handler in self._weather_handlers:
+                weather_handler(weather_reading)
 
         elif event_type == EventType.MACRO:
-            reading = MacroReading(
-                source=source, symbol=symbol, timestamp=timestamp,
+            macro_reading = MacroReading(
+                source=source,
+                symbol=symbol,
+                timestamp=timestamp,
                 series=payload.get("series", symbol),
                 value=payload.get("value"),
                 date=payload.get("date", ""),
             )
-            for h in self._macro_handlers:
-                h(reading)
+            for macro_handler in self._macro_handlers:
+                macro_handler(macro_reading)

@@ -23,9 +23,10 @@ Examples
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import pandas as pd
-
 
 # ---------------------------------------------------------------------------
 # Unit conversion constants
@@ -57,6 +58,7 @@ def usc_per_gallon_to_usd_per_barrel(usc: float) -> float:
 # ---------------------------------------------------------------------------
 # Crack spreads
 # ---------------------------------------------------------------------------
+
 
 def crack_3_2_1(
     wti: float,
@@ -142,6 +144,7 @@ def heating_oil_crack(brent: float, ulsd_usc: float) -> float:
 # Spark spread
 # ---------------------------------------------------------------------------
 
+
 def spark_spread(
     power_price_mwh: float,
     gas_price_mmbtu: float,
@@ -177,6 +180,7 @@ def spark_spread(
 # ---------------------------------------------------------------------------
 # Term structure
 # ---------------------------------------------------------------------------
+
 
 def contango_backwardation_ratio(
     front_price: float,
@@ -258,6 +262,7 @@ def annualised_roll_yield(
 # Seasonality
 # ---------------------------------------------------------------------------
 
+
 def seasonal_index(
     prices: pd.Series,
     method: str = "average",
@@ -285,23 +290,26 @@ def seasonal_index(
     if not isinstance(prices.index, pd.DatetimeIndex):
         raise ValueError("prices must have a DatetimeIndex")
 
-    df   = prices.to_frame(name="price")
-    df["month"] = df.index.month  # type: ignore[attr-defined]
+    df = prices.to_frame(name="price")
+    df["month"] = cast(pd.DatetimeIndex, df.index).month
     grouped = df.groupby("month")["price"]
 
-    return pd.DataFrame({
-        "mean":   grouped.mean(),
-        "median": grouped.median(),
-        "std":    grouped.std(),
-        "min":    grouped.min(),
-        "max":    grouped.max(),
-        "count":  grouped.count(),
-    })
+    return pd.DataFrame(
+        {
+            "mean": grouped.mean(),
+            "median": grouped.median(),
+            "std": grouped.std(),
+            "min": grouped.min(),
+            "max": grouped.max(),
+            "count": grouped.count(),
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
 # Supply / demand balance
 # ---------------------------------------------------------------------------
+
 
 def supply_demand_balance(
     production: float,
