@@ -17,16 +17,22 @@ import structlog
 
 log = structlog.get_logger(__name__)
 
+HEADERS: dict[str, str] = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/rss+xml, application/xml, text/xml, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
 NEWS_FEEDS: dict[str, str] = {
-    "EIA": "https://www.eia.gov/rss/pressreleases.xml",
-    "IEA": "https://www.iea.org/newsroom/rss.xml",
+    "GoogleNewsEnergy": "https://news.google.com/rss/search?q=energy&hl=en-US&gl=US&ceid=US:en",
+    "NYTimesEnergy": "https://rss.nytimes.com/services/xml/rss/nyt/EnergyEnvironment.xml",
     "OPEC": "https://www.opec.org/opec_web/en/rss.xml",
 }
 
-# Fallback RSS sources (Yahoo Finance, energy news)
 FALLBACK_FEEDS: dict[str, str] = {
+    "DJMarkets": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
     "YahooFinance": "https://finance.yahoo.com/news/energy/rss.xml",
-    "CNBC": "https://feeds.cnbc.com/id/100003114/",
 }
 
 
@@ -74,7 +80,7 @@ class NewsFeedAdapter:
             sources = list(NEWS_FEEDS)
 
         items: list[NewsItem] = []
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(headers=HEADERS) as session:
             for source in sources:
                 url = NEWS_FEEDS[source]
                 try:
@@ -92,11 +98,12 @@ class NewsFeedAdapter:
         # If primary sources yielded few items, try fallback sources
         if len(items) < 5:
             log.info("Falling back to secondary feeds", current_count=len(items))
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(headers=HEADERS) as session:
                 for source, url in FALLBACK_FEEDS.items():
                     try:
                         async with session.get(url, timeout=20) as resp:
                             if resp.status != 200:
+                                log.warning("NewsFeedAdapter fallback bad status", source=source, status=resp.status)
                                 continue
                             text = await resp.text()
                             items.extend(cls._parse_rss(source, text))
