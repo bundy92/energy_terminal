@@ -12,11 +12,16 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
+    QComboBox,
+    QFormLayout,
     QGridLayout,
     QLabel,
+    QLineEdit,
+    QPushButton,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -26,6 +31,12 @@ from energy_terminal.analytics.fundamental import (
     crack_3_2_1,
     crack_2_1_1,
     spark_spread,
+)
+from energy_terminal.analytics.options import (
+    black_scholes_delta,
+    black_scholes_gamma,
+    black_scholes_price,
+    black_scholes_vega,
 )
 from energy_terminal.data.cache import TimeSeriesCache
 from energy_terminal.data.models import FundamentalReading, MacroReading, Tick
@@ -64,7 +75,9 @@ class AnalyticsPanel(BasePanel):
         tabs = QTabWidget()
         tabs.addTab(self._build_spreads_tab(),   "SPREADS")
         tabs.addTab(self._build_matrix_tab(),    "MATRIX")
+        tabs.addTab(self._build_options_tab(),   "OPTIONS")
         tabs.addTab(self._build_macro_tab(),     "MACRO")
+        self._tabs = tabs
 
         self.content_layout.addWidget(tabs)
 
@@ -114,6 +127,49 @@ class AnalyticsPanel(BasePanel):
         self._lbl_dxy = val_lbl(); g.addWidget(self._lbl_dxy, row, 1); row += 1
 
         g.setRowStretch(row, 1)
+        return w
+
+    def _build_options_tab(self) -> QWidget:
+        """Black-Scholes options analytics builder."""
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setContentsMargins(8, 8, 8, 8)
+        v.setSpacing(8)
+
+        form = QFormLayout()
+        self._opt_underly = QLineEdit("100.0")
+        self._opt_strike = QLineEdit("100.0")
+        self._opt_maturity = QLineEdit("0.25")
+        self._opt_vol = QLineEdit("0.25")
+        self._opt_rate = QLineEdit("0.02")
+        self._opt_type = QComboBox()
+        self._opt_type.addItems(["Call", "Put"])
+
+        form.addRow("Underlying", self._opt_underly)
+        form.addRow("Strike", self._opt_strike)
+        form.addRow("Expiry (yrs)", self._opt_maturity)
+        form.addRow("Volatility", self._opt_vol)
+        form.addRow("Rate", self._opt_rate)
+        form.addRow("Type", self._opt_type)
+
+        calculate_btn = QPushButton("CALCULATE")
+        calculate_btn.clicked.connect(self._update_options_metrics)
+
+        self._opt_price_lbl = QLabel("Premium: —")
+        self._opt_delta_lbl = QLabel("Delta: —")
+        self._opt_gamma_lbl = QLabel("Gamma: —")
+        self._opt_vega_lbl = QLabel("Vega: —")
+
+        for lbl in [self._opt_price_lbl, self._opt_delta_lbl, self._opt_gamma_lbl, self._opt_vega_lbl]:
+            lbl.setStyleSheet(f"color:{PALETTE.FG_PRIMARY}; font-size:12px; font-weight:bold;")
+
+        v.addLayout(form)
+        v.addWidget(calculate_btn)
+        v.addWidget(self._opt_price_lbl)
+        v.addWidget(self._opt_delta_lbl)
+        v.addWidget(self._opt_gamma_lbl)
+        v.addWidget(self._opt_vega_lbl)
+        v.addStretch(1)
         return w
 
     # ------------------------------------------------------------------
@@ -248,3 +304,32 @@ class AnalyticsPanel(BasePanel):
                 else:
                     item.setForeground(QColor(PALETTE.NEGATIVE))
                 self._matrix.setItem(r, c, item)
+
+    def _parse_option_input(self, field: QLineEdit, default: float) -> float:
+        try:
+            return float(field.text())
+        except ValueError:
+            return default
+
+    def _update_options_metrics(self) -> None:
+        spot = self._parse_option_input(self._opt_underly, 100.0)
+        strike = self._parse_option_input(self._opt_strike, 100.0)
+        expiry = self._parse_option_input(self._opt_maturity, 0.25)
+        vol = self._parse_option_input(self._opt_vol, 0.25)
+        rate = self._parse_option_input(self._opt_rate, 0.02)
+        option_type = self._opt_type.currentText().lower()
+
+        try:
+            price = black_scholes_price(spot, strike, expiry, rate, vol, option_type)
+            delta = black_scholes_delta(spot, strike, expiry, rate, vol, option_type)
+            gamma = black_scholes_gamma(spot, strike, expiry, rate, vol)
+            vega = black_scholes_vega(spot, strike, expiry, rate, vol)
+            self._opt_price_lbl.setText(f"Premium: ${price:,.2f}")
+            self._opt_delta_lbl.setText(f"Delta: {delta:.4f}")
+            self._opt_gamma_lbl.setText(f"Gamma: {gamma:.4f}")
+            self._opt_vega_lbl.setText(f"Vega: {vega:.4f}")
+        except ValueError:
+            self._opt_price_lbl.setText("Premium: —")
+            self._opt_delta_lbl.setText("Delta: —")
+            self._opt_gamma_lbl.setText("Gamma: —")
+            self._opt_vega_lbl.setText("Vega: —")

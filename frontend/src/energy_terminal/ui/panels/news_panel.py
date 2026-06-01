@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from PyQt6.QtCore import Qt, QUrl
-from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtGui import QColor, QDesktopServices
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -78,11 +78,32 @@ class NewsPanel(BasePanel):
         self._refresh_button.setEnabled(False)
         self._items = await NewsFeedAdapter.fetch_items()
         self._render_items()
-        self._status_label.setText(f"{len(self._items)} headlines loaded")
+        if self._items:
+            self._status_label.setText(
+                f"{len(self._items)} headlines | Last refresh: {self._get_timestamp()}"
+            )
+        else:
+            self._status_label.setText(
+                "No headlines available. Check your internet connection or try again."
+            )
         self._refresh_button.setEnabled(True)
         self._set_loading(False)
 
+    def _get_timestamp(self) -> str:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        return now.strftime("%H:%M:%S UTC")
+
     def _render_items(self) -> None:
+        if not self._items:
+            self._table.setRowCount(1)
+            empty_msg = QTableWidgetItem("No news available. Press REFRESH or check connection.")
+            empty_msg.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty_msg.setForeground(QColor(PALETTE.FG_MUTED))
+            self._table.setItem(0, 0, empty_msg)
+            self._table.setSpan(0, 0, 1, 3)
+            return
+
         self._table.setRowCount(len(self._items))
         for row, item in enumerate(self._items):
             source_item = QTableWidgetItem(item.source)

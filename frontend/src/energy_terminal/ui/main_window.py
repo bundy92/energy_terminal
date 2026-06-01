@@ -461,7 +461,7 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
             self._panel_watchlist.raise_()
         elif panel_name == "debug":
             self._panel_debug.set_active(True)
-            self._panel_stack.setCurrentIndex(5)
+            self._panel_stack.setCurrentIndex(6)
             sb = self.statusBar()
             assert sb is not None
             sb.showMessage("Panel: DEBUG", 2000)

@@ -23,6 +23,12 @@ NEWS_FEEDS: dict[str, str] = {
     "OPEC": "https://www.opec.org/opec_web/en/rss.xml",
 }
 
+# Fallback RSS sources (Yahoo Finance, energy news)
+FALLBACK_FEEDS: dict[str, str] = {
+    "YahooFinance": "https://finance.yahoo.com/news/energy/rss.xml",
+    "CNBC": "https://feeds.cnbc.com/id/100003114/",
+}
+
 
 class NewsItem:
     """A normalized RSS news item."""
@@ -65,7 +71,7 @@ class NewsFeedAdapter:
     ) -> list[NewsItem]:
         sources = [s for s in (sources or cls.supported_sources()) if s in NEWS_FEEDS]
         if not sources:
-            return []
+            sources = list(NEWS_FEEDS)
 
         items: list[NewsItem] = []
         async with aiohttp.ClientSession() as session:
@@ -82,6 +88,21 @@ class NewsFeedAdapter:
                     continue
 
                 items.extend(cls._parse_rss(source, text))
+
+        # If primary sources yielded few items, try fallback sources
+        if len(items) < 5:
+            log.info("Falling back to secondary feeds", current_count=len(items))
+            async with aiohttp.ClientSession() as session:
+                for source, url in FALLBACK_FEEDS.items():
+                    try:
+                        async with session.get(url, timeout=20) as resp:
+                            if resp.status != 200:
+                                continue
+                            text = await resp.text()
+                            items.extend(cls._parse_rss(source, text))
+                    except Exception as exc:  # noqa: BLE001
+                        log.debug("Fallback feed error", source=source, exc=str(exc))
+                        continue
 
         items.sort(key=lambda item: item.timestamp, reverse=True)
         return items[:limit]

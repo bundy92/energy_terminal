@@ -28,6 +28,7 @@ from energy_terminal.data.models import (
     OHLCVBar,
     Tick,
 )
+from energy_terminal.data.lng_feed import LNGFeedAdapter, LNG_INSTRUMENT_NAMES
 
 log = structlog.get_logger(__name__)
 
@@ -44,6 +45,10 @@ DEFAULT_INSTRUMENTS: list[str] = [
     "BZ=F",
     # Natural Gas
     "NG=F",
+    # LNG benchmarks
+    "JKM=F",
+    "TTF=F",
+    "NBP=F",
     # Refined Products
     "RB=F",
     "HO=F",
@@ -86,6 +91,7 @@ INSTRUMENT_NAMES: dict[str, str] = {
     "ZS=F": "Soybean Futures",
     "BDRY": "Dry Bulk ETF",
 }
+INSTRUMENT_NAMES.update(LNG_INSTRUMENT_NAMES)
 
 
 class DirectFeed:
@@ -112,10 +118,18 @@ class DirectFeed:
         instruments: list[str] | None = None,
         poll_interval_s: float = 30.0,
     ) -> None:
-        self._instruments = instruments or DEFAULT_INSTRUMENTS
+        self._instruments = [self._normalize_symbol(sym) for sym in (instruments or DEFAULT_INSTRUMENTS)]
         self._poll_interval = poll_interval_s
         self._running = False
         self._tick_handlers: list[TickHandler] = []
+        self._lng_adapter = LNGFeedAdapter()
+
+    @staticmethod
+    def _normalize_symbol(symbol: str) -> str:
+        normalized = symbol.strip().upper()
+        if LNGFeedAdapter.supports(normalized):
+            return normalized
+        return normalized
 
     # ------------------------------------------------------------------
     # Handler registration
@@ -154,36 +168,43 @@ class DirectFeed:
 
     def _fetch_quotes(self) -> list[Tick]:
         """Synchronous yfinance bulk quote fetch (runs in executor)."""
-        symbols = " ".join(self._instruments)
-        try:
-            data = yf.download(
-                tickers=symbols,
-                period="1d",
-                interval="1m",
-                progress=False,
-                auto_adjust=True,
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.error("yfinance download error", exc=str(exc))
-            return []
-
+        lng_symbols = [sym for sym in self._instruments if self._lng_adapter.supports(sym)]
+        non_lng = [sym for sym in self._instruments if sym not in lng_symbols]
         ticks: list[Tick] = []
         ts_ms = int(time.time() * 1000)
 
-        if isinstance(data.columns, pd.MultiIndex):
-            for sym in self._instruments:
-                tick = self._parse_bulk_quote(data, sym, ts_ms)
-                if tick is not None:
-                    ticks.append(tick)
+        if lng_symbols:
+            ticks.extend(asyncio.run(self._lng_adapter.fetch_quotes(lng_symbols)))
 
-        if ticks:
-            received = {tick.symbol for tick in ticks}
-            missing = [sym for sym in self._instruments if sym not in received]
-            if missing:
-                ticks.extend(self._fetch_quotes_singleton(ts_ms, symbols=missing))
-            return ticks
+        if non_lng:
+            symbols = " ".join(non_lng)
+            try:
+                data = yf.download(
+                    tickers=symbols,
+                    period="1d",
+                    interval="1m",
+                    progress=False,
+                    auto_adjust=True,
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.error("yfinance download error", exc=str(exc))
+                return ticks
 
-        return self._fetch_quotes_singleton(ts_ms, symbols=self._instruments)
+            if isinstance(data.columns, pd.MultiIndex):
+                for sym in non_lng:
+                    tick = self._parse_bulk_quote(data, sym, ts_ms)
+                    if tick is not None:
+                        ticks.append(tick)
+
+            if ticks:
+                received = {tick.symbol for tick in ticks}
+                missing = [sym for sym in non_lng if sym not in received]
+                if missing:
+                    ticks.extend(self._fetch_quotes_singleton(ts_ms, symbols=missing))
+                return ticks
+
+            ticks.extend(self._fetch_quotes_singleton(ts_ms, symbols=non_lng))
+        return ticks
 
     def _parse_bulk_quote(self, data: pd.DataFrame, sym: str, ts_ms: int) -> Tick | None:
         try:
@@ -223,6 +244,7 @@ class DirectFeed:
         return ticks
 
     def _fetch_single_quote(self, sym: str, ts_ms: int) -> Tick | None:
+        sym = self._normalize_symbol(sym)
         try:
             ticker = yf.Ticker(sym)
             info = ticker.fast_info
@@ -259,6 +281,10 @@ class DirectFeed:
 
     async def fetch_quote(self, symbol: str) -> Tick | None:
         """Fetch a single latest quote for a symbol."""
+        symbol = self._normalize_symbol(symbol)
+        if self._lng_adapter.supports(symbol):
+            return await self._lng_adapter.fetch_quote(symbol)
+
         loop = asyncio.get_running_loop()
         ts_ms = int(time.time() * 1000)
         return await loop.run_in_executor(None, self._fetch_single_quote, symbol, ts_ms)
@@ -291,6 +317,10 @@ class DirectFeed:
         list[OHLCVBar]
             List of OHLCV bars sorted ascending by timestamp.
         """
+        symbol = self._normalize_symbol(symbol)
+        if self._lng_adapter.supports(symbol):
+            return await self._lng_adapter.fetch_ohlcv(symbol, period=period, interval=interval)
+
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._fetch_ohlcv_sync, symbol, period, interval)
 

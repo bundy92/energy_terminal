@@ -125,6 +125,20 @@ run:
 	@echo "▶ Starting full stack..."
 	@bash ./scripts/start_full_stack.sh
 
+build-macos:
+	@echo "▶ Building macOS .app bundle..."
+	cd $(FRONTEND_DIR) && pyinstaller \
+		--name=EnergyTerminal \
+		--onedir \
+		--windowed \
+		--icon=../docs/icon.icns \
+		--add-data="src/energy_terminal:energy_terminal" \
+		--hidden-import=PyQt6 \
+		--hidden-import=qasync \
+		--osx-bundle-identifier=com.energy-terminal.app \
+		src/energy_terminal/main.py
+	@echo "✓ macOS app bundle ready at dist/EnergyTerminal.app"
+
 # ----------------------------------------------------------------------------
 # Release build
 # ----------------------------------------------------------------------------

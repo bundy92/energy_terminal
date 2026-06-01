@@ -27,6 +27,14 @@ from energy_terminal.analytics.risk import (
     log_returns,
     pct_returns,
 )
+from energy_terminal.analytics.options import (
+    black_scholes_delta,
+    black_scholes_gamma,
+    black_scholes_price,
+    black_scholes_vega,
+    implied_vol_surface,
+    implied_volatility,
+)
 from energy_terminal.analytics.technical import (
     atr,
     bollinger_bands,
@@ -42,6 +50,8 @@ from energy_terminal.analytics.technical import (
 __all__ = [
     "atr", "bollinger_bands", "ema", "macd", "obv", "rsi", "sma",
     "stochastic", "vwap",
+    "black_scholes_price", "black_scholes_delta", "black_scholes_gamma",
+    "black_scholes_vega", "implied_volatility", "implied_vol_surface",
     "crack_2_1_1", "crack_3_2_1", "heating_oil_crack", "seasonal_index",
     "spark_spread", "supply_demand_balance", "term_structure_slope",
     "annualised_roll_yield",

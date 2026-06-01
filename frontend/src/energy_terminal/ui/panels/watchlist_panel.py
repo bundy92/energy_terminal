@@ -173,7 +173,12 @@ class WatchlistPanel(BasePanel):
         """Add the ticker from the input field to the watchlist."""
         sym = self._add_input.text().strip().upper()
         self._add_input.clear()
-        if not sym or sym in self._row_map:
+        if not sym:
+            return
+
+        if sym in {"JKM", "TTF", "NBP"}:
+            sym = f"{sym}=F"
+        if sym in self._row_map:
             return
         row = self._table.rowCount()
         self._table.insertRow(row)
