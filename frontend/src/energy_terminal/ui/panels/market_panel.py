@@ -8,6 +8,8 @@ Columns: Symbol | Name | Last | Change | Chg% | High | Low | Volume
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
@@ -41,9 +43,15 @@ class MarketPanel(BasePanel):
         Shared DuckDB cache (used to seed last-known prices on startup).
     """
 
-    def __init__(self, cache: TimeSeriesCache, parent: object = None) -> None:
+    def __init__(
+        self,
+        cache: TimeSeriesCache,
+        on_symbol_selected: Callable[[str], None] | None = None,
+        parent: object = None,
+    ) -> None:
         super().__init__(title="MARKET OVERVIEW", subtitle="ALL INSTRUMENTS")
         self._cache    = cache
+        self._on_symbol_selected = on_symbol_selected
         self._row_map: dict[str, int] = {}
         self._table    = self._build_table()
         self.content_layout.addWidget(self._table)
@@ -71,6 +79,7 @@ class MarketPanel(BasePanel):
             for col in range(2, len(_COLUMNS)):
                 self._set_cell(t, i, col, "—")
 
+        t.cellClicked.connect(self._handle_symbol_click)
         return t
 
     # ------------------------------------------------------------------
@@ -115,8 +124,19 @@ class MarketPanel(BasePanel):
     # Helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
+    def _handle_symbol_click(self, row: int, col: int) -> None:
+        """Handle row clicks and load the chart for the selected market symbol."""
+        if self._on_symbol_selected is None:
+            return
+        item = self._table.item(row, 0)
+        if item is None:
+            return
+        symbol = item.text().strip().upper()
+        if symbol:
+            self._on_symbol_selected(symbol)
+
     def _set_cell(
+        self,
         table: QTableWidget,
         row: int,
         col: int,

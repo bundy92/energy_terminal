@@ -9,6 +9,7 @@ backend/log/
 # Editor and environment
 .vscode/
 frontend/.venv/
+frontend/.coverage
 
 # Backend dependency lockfiles
 backend/rebar.lock

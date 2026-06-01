@@ -7,6 +7,9 @@ magenta.  Supports drag-to-reorder rows (Qt item model).
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
@@ -19,6 +22,8 @@ from PyQt6.QtWidgets import (
 )
 
 import structlog
+
+from energy_terminal.data.direct_feed import DirectFeed
 
 from energy_terminal.data.alerts import AlertEngine, AlertFired
 from energy_terminal.data.cache import TimeSeriesCache
@@ -48,11 +53,13 @@ class WatchlistPanel(BasePanel):
         self,
         cache: TimeSeriesCache,
         alerts: AlertEngine,
+        on_symbol_selected: Callable[[str], None] | None = None,
         parent: object = None,
     ) -> None:
         super().__init__(title="WATCHLIST", subtitle="")
         self._cache    = cache
         self._alerts   = alerts
+        self._on_symbol_selected = on_symbol_selected
         self._watchlist: list[str] = list(_DEFAULT_WATCHLIST)
         self._row_map:  dict[str, int] = {}
         self._fired:    set[str] = set()
@@ -104,6 +111,7 @@ class WatchlistPanel(BasePanel):
             t.setItem(i, 2, self._cell("—"))
             t.setItem(i, 3, self._cell(""))
 
+        t.cellClicked.connect(self._handle_symbol_click)
         return t
 
     # ------------------------------------------------------------------
@@ -146,6 +154,17 @@ class WatchlistPanel(BasePanel):
         if row is not None:
             self._set_cell(row, 3, "⚠ " + event.alert.message, PALETTE.MAGENTA)
 
+    def _handle_symbol_click(self, row: int, col: int) -> None:
+        """Handle clicks on watchlist rows and load the chart for that symbol."""
+        if self._on_symbol_selected is None:
+            return
+        item = self._table.item(row, 0)
+        if item is None:
+            return
+        symbol = item.text().strip().upper()
+        if symbol:
+            self._on_symbol_selected(symbol)
+
     # ------------------------------------------------------------------
     # Add / remove
     # ------------------------------------------------------------------
@@ -161,10 +180,19 @@ class WatchlistPanel(BasePanel):
         self._row_map[sym] = row
         self._watchlist.append(sym)
         self._table.setItem(row, 0, self._cell(sym))
-        self._table.setItem(row, 1, self._cell("—"))
-        self._table.setItem(row, 2, self._cell("—"))
+        last_close = self._cache.latest_close(sym)
+        if last_close is not None:
+            self._set_cell(row, 1, f"{last_close:.4f}", PALETTE.FG_MUTED)
+            self._set_cell(row, 2, "+0.00%", PALETTE.FG_MUTED)
+        else:
+            self._table.setItem(row, 1, self._cell("LOADING..."))
+            self._table.setItem(row, 2, self._cell("—"))
         self._table.setItem(row, 3, self._cell(""))
         log.info("Watchlist ticker added", symbol=sym)
+        try:
+            asyncio.get_running_loop().create_task(self._fetch_initial_price(sym))
+        except RuntimeError:
+            pass
 
     # ------------------------------------------------------------------
     # Helpers
@@ -178,6 +206,15 @@ class WatchlistPanel(BasePanel):
         if colour:
             item.setForeground(QColor(colour))
         return item
+
+    async def _fetch_initial_price(self, symbol: str) -> None:
+        tick = await DirectFeed().fetch_quote(symbol)
+        if tick is None or tick.symbol != symbol:
+            return
+        row = self._row_map.get(symbol)
+        if row is None:
+            return
+        self.on_tick(tick)
 
     def _set_cell(self, row: int, col: int, text: str,
                   colour: str | None = None) -> None:

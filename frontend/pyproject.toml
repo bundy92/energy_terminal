@@ -37,7 +37,7 @@ dependencies = [
 
     # Charting (static/PDF export)
     "matplotlib>=3.8.0",
-    "mplfinance>=0.12.10",
+    "mplfinance>=0.12.10b0",
 
     # Utilities
     "structlog>=23.2.0",

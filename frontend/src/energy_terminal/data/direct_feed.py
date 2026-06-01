@@ -257,6 +257,12 @@ class DirectFeed:
         except Exception:  # noqa: BLE001
             return None
 
+    async def fetch_quote(self, symbol: str) -> Tick | None:
+        """Fetch a single latest quote for a symbol."""
+        loop = asyncio.get_running_loop()
+        ts_ms = int(time.time() * 1000)
+        return await loop.run_in_executor(None, self._fetch_single_quote, symbol, ts_ms)
+
     # ------------------------------------------------------------------
     # Historical OHLCV
     # ------------------------------------------------------------------

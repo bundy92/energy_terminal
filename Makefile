@@ -123,14 +123,7 @@ run-frontend:
 
 run:
 	@echo "▶ Starting full stack..."
-	cd $(BACKEND_DIR) && $(REBAR) shell \
-		--config config/sys.config \
-		--vm_args config/vm.args \
-		--detached 2>/dev/null || \
-		(cd $(BACKEND_DIR) && $(REBAR) shell &)
-	sleep 3
-	@echo "▶ Backend started. Launching UI..."
-	cd $(FRONTEND_DIR) && $(PYTHON) -m energy_terminal.main
+	@bash ./scripts/start_full_stack.sh
 
 # ----------------------------------------------------------------------------
 # Release build

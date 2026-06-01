@@ -67,14 +67,23 @@ export IEA_API_KEY=your_iea_key      # https://www.iea.org/data-and-statistics
 The terminal runs without any API keys — it falls back to Yahoo Finance
 (free, no key) and Open-Meteo (free, no key) for price and weather data.
 
-### 3. Start the Elixir data gateway
+### 3. Start the Energy Terminal full stack
+
+```bash
+make run
+# or: ./scripts/start_full_stack.sh
+```
+
+This starts the Elixir gateway and the desktop UI together, automatically detects `frontend/.venv`, and reuses an already-running backend when available. It shuts both down when you close the UI or press Ctrl+C.
+
+### 4. Start the Elixir data gateway separately
 
 ```bash
 make run-backend
 # or: ./scripts/start_backend.sh
 ```
 
-### 4. Start the desktop UI (separate terminal)
+### 5. Start the desktop UI separately (in another terminal)
 
 ```bash
 make run-frontend

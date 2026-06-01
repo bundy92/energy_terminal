@@ -20,6 +20,7 @@ Keybindings
 | F6       | Weather / HDD-CDD panel       |
 | F7       | Risk panel                    |
 | F8       | Alerts panel                  |
+| F9       | Debug / log panel             |
 | Ctrl+Q   | Quit                          |
 | Ctrl+E   | Export current panel data     |
 | Ctrl+R   | Refresh all feeds             |
@@ -54,6 +55,7 @@ from energy_terminal.ui.panels.alert_panel import AlertPanel
 from energy_terminal.ui.panels.analytics_panel import AnalyticsPanel
 from energy_terminal.ui.panels.base_panel import BasePanel
 from energy_terminal.ui.panels.chart_panel import ChartPanel
+from energy_terminal.ui.panels.debug_panel import DebugPanel
 from energy_terminal.ui.panels.fundamental_panel import FundamentalPanel
 from energy_terminal.ui.panels.market_panel import MarketPanel
 from energy_terminal.ui.panels.risk_panel import RiskPanel
@@ -176,14 +178,15 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
             Outer vertical splitter containing two horizontal splitters.
         """
         # Instantiate all panels
-        self._panel_market = MarketPanel(self._cache)
+        self._panel_market = MarketPanel(self._cache, on_symbol_selected=self._on_symbol_selected)
         self._panel_chart = ChartPanel(self._cache)
-        self._panel_watchlist = WatchlistPanel(self._cache, self._alerts)
+        self._panel_watchlist = WatchlistPanel(self._cache, self._alerts, on_symbol_selected=self._on_symbol_selected)
         self._panel_analytics = AnalyticsPanel(self._cache)
         self._panel_fundamental = FundamentalPanel(self._cache)
         self._panel_weather = WeatherPanel(self._cache)
         self._panel_risk = RiskPanel(self._cache)
         self._panel_alerts = AlertPanel(self._alerts)
+        self._panel_debug = DebugPanel()
 
         # Default layout: market | chart (top row), watchlist | active panel stack (bottom)
         top = QSplitter(Qt.Orientation.Horizontal)
@@ -198,6 +201,7 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
             self._panel_weather,
             self._panel_risk,
             self._panel_alerts,
+            self._panel_debug,
         ):
             self._panel_stack.addWidget(panel)
 
@@ -227,7 +231,7 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
             lbl.setStyleSheet(f"color: {PALETTE.FG_SECONDARY}; font-size: 10px;")
             sb.addPermanentWidget(lbl)
 
-        sb.showMessage("Ready — press F1–F8 to switch panels, enter ticker + ENTER to navigate")
+        sb.showMessage("Ready — press F1–F9 to switch panels, enter ticker + ENTER to navigate")
 
     # ------------------------------------------------------------------
     # Shortcuts
@@ -244,6 +248,7 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
             Qt.Key.Key_F6: lambda: self._swap_panel("weather"),
             Qt.Key.Key_F7: lambda: self._swap_panel("risk"),
             Qt.Key.Key_F8: lambda: self._swap_panel("alerts"),
+            Qt.Key.Key_F9: lambda: self._swap_panel("debug"),
         }
         for key, fn in panel_map.items():
             sc = QShortcut(QKeySequence(key), self)
@@ -287,6 +292,7 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
             if fallback_task is None:
                 self._set_connected(False)
                 log.warning("Gateway unavailable — switching to direct feed")
+                self._debug("gateway", "Gateway unavailable — starting direct feed fallback")
                 fallback_task = asyncio.create_task(self._fallback.start_polling())
 
         async def stop_fallback() -> None:
@@ -354,6 +360,7 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
     def _on_alert_fired(self, event: AlertFired) -> None:
         """Handle a fired alert — flash status bar and update alert panel."""
         self._panel_alerts.on_alert_fired(event)
+        self._debug("alert", f"{event.alert}")
         sb = self.statusBar()
         assert sb is not None
         sb.showMessage(
@@ -387,6 +394,20 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
         assert sb is not None
         sb.showMessage(f"Loaded: {symbol}", 3000)
         log.info("Command bar navigation", input=raw, resolved=symbol)
+        self._debug("command", f"Loaded chart for {symbol}")
+
+    def _on_symbol_selected(self, symbol: str) -> None:
+        """Load the chart for a selected symbol from market or watchlist."""
+        self._panel_chart.load_symbol(symbol)
+        self._swap_panel("chart")
+        sb = self.statusBar()
+        assert sb is not None
+        sb.showMessage(f"Loaded: {symbol}", 3000)
+        self._debug("selection", f"Loaded chart for {symbol}")
+
+    def _debug(self, source: str, message: str, level: str = "INFO") -> None:
+        if hasattr(self, "_panel_debug"):
+            self._panel_debug.append_log(source, message, level)
 
     # ------------------------------------------------------------------
     # Panel switching
@@ -404,6 +425,7 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
             self._panel_weather,
             self._panel_risk,
             self._panel_alerts,
+            self._panel_debug,
         ):
             panel.set_active(False)
 
@@ -416,6 +438,12 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
         elif panel_name == "watchlist":
             self._panel_watchlist.set_active(True)
             self._panel_watchlist.raise_()
+        elif panel_name == "debug":
+            self._panel_debug.set_active(True)
+            self._panel_stack.setCurrentIndex(5)
+            sb = self.statusBar()
+            assert sb is not None
+            sb.showMessage("Panel: DEBUG", 2000)
         else:
             stack_index = {
                 "analytics": 0,
@@ -423,6 +451,7 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
                 "weather": 2,
                 "risk": 3,
                 "alerts": 4,
+                "debug": 5,
             }.get(panel_name, 0)
             self._panel_stack.setCurrentIndex(stack_index)
             current = self._panel_stack.currentWidget()
@@ -444,11 +473,13 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
             self._conn_label.setStyleSheet(
                 f"color: {PALETTE.POSITIVE}; font-size: 11px; font-weight: bold;"
             )
+            self._debug("gateway", "Connected to live backend")
         else:
             self._conn_label.setText("● DELAYED")
             self._conn_label.setStyleSheet(
                 f"color: {PALETTE.YELLOW}; font-size: 11px; font-weight: bold;"
             )
+            self._debug("gateway", "Switched to delayed direct feed")
 
     def _update_status_feed(self, tick: object) -> None:
         """Refresh status bar feed indicator on each tick."""

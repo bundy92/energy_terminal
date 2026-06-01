@@ -49,41 +49,41 @@ class PALETTE:
     """Static colour token namespace."""
 
     # Backgrounds
-    BG_PRIMARY   = "#000000"
-    BG_PANEL     = "#0D0D0D"
-    BG_HEADER    = "#1A1A1A"
-    BG_INPUT     = "#0A0A0A"
-    BG_SELECTED  = "#1C2E4A"
-    BG_ALT_ROW   = "#111111"
+    BG_PRIMARY   = "#13213A"
+    BG_PANEL     = "#1B2A44"
+    BG_HEADER    = "#233657"
+    BG_INPUT     = "#1D2B4D"
+    BG_SELECTED  = "#37527D"
+    BG_ALT_ROW   = "#19284A"
 
     # Foregrounds
-    FG_PRIMARY   = "#E8E8E8"
-    FG_SECONDARY = "#A0A0A0"
-    FG_MUTED     = "#5A5A5A"
+    FG_PRIMARY   = "#E5ECEF"
+    FG_SECONDARY = "#B0BACB"
+    FG_MUTED     = "#8C99A9"
 
     # Accents
-    AMBER        = "#FF8C00"
-    POSITIVE     = "#00C176"
-    NEGATIVE     = "#FF3B3B"
-    NEUTRAL      = "#7B8FA8"
-    CYAN         = "#00B4D8"
-    MAGENTA      = "#E040FB"
-    YELLOW       = "#FFD600"
-    WHITE        = "#FFFFFF"
+    AMBER        = "#D4A76A"
+    POSITIVE     = "#7AC29A"
+    NEGATIVE     = "#E48C8C"
+    NEUTRAL      = "#92A4C8"
+    CYAN         = "#7EC4D8"
+    MAGENTA      = "#C99DDC"
+    YELLOW       = "#E3D890"
+    WHITE        = "#F8FAFC"
 
     # Structural
-    BORDER        = "#2A2A2A"
-    BORDER_ACTIVE = "#FF8C00"
+    BORDER        = "#2C3B51"
+    BORDER_ACTIVE = "#D4A76A"
 
     # Chart series colours (consistent across all panels)
     SERIES = [
-        "#FF8C00",  # amber   — primary series
-        "#00C176",  # green   — secondary
-        "#00B4D8",  # cyan    — tertiary
-        "#E040FB",  # magenta — quaternary
-        "#FFD600",  # yellow  — quinary
-        "#FF3B3B",  # red     — senary
-        "#A0A0A0",  # grey    — septenary
+        "#D4A76A",  # amber   — primary series
+        "#7AC29A",  # green   — secondary
+        "#7EC4D8",  # cyan    — tertiary
+        "#C99DDC",  # magenta — quaternary
+        "#E3D890",  # yellow  — quinary
+        "#E48C8C",  # red     — senary
+        "#AEB8C8",  # grey    — septenary
     ]
 
 
