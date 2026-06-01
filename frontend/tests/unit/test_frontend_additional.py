@@ -5,12 +5,15 @@ import pytest
 from unittest.mock import AsyncMock
 
 from energy_terminal.analytics import fundamental as fmod
+from energy_terminal.analytics import options as omod
 from energy_terminal.analytics import risk as rmod
 from energy_terminal.analytics import technical as tmod
 from energy_terminal.data.alerts import AlertEngine, AlertFired
 from energy_terminal.data.cache import TimeSeriesCache
 from energy_terminal.data.client import GatewayClient
 from energy_terminal.data.direct_feed import DirectFeed
+from energy_terminal.data.lng_feed import LNGFeedAdapter
+from energy_terminal.data.news_feed import NewsFeedAdapter
 from energy_terminal.data.models import Alert, AlertCondition, FundamentalReading, MacroReading, Tick
 from energy_terminal.ui.panels.alert_panel import AlertPanel
 from energy_terminal.ui.panels.chart_panel import ChartPanel
@@ -81,6 +84,46 @@ def test_analytics_risk_metrics():
     assert portfolio >= 0
     with pytest.raises(ValueError):
         rmod.portfolio_var(np.array([0.5, 0.5]), cov, confidence=1.0)
+
+
+def test_options_analytics_pricing_and_implied_volatility():
+    spot = 100.0
+    strike = 100.0
+    expiry = 0.25
+    rate = 0.02
+    sigma = 0.22
+
+    call_price = omod.black_scholes_price(spot, strike, expiry, rate, sigma, "call")
+    put_price = omod.black_scholes_price(spot, strike, expiry, rate, sigma, "put")
+
+    assert call_price > put_price
+    assert call_price == pytest.approx(
+        put_price + spot - strike * np.exp(-rate * expiry), rel=1e-6
+    )
+
+    delta = omod.black_scholes_delta(spot, strike, expiry, rate, sigma, "call")
+    gamma = omod.black_scholes_gamma(spot, strike, expiry, rate, sigma)
+    vega = omod.black_scholes_vega(spot, strike, expiry, rate, sigma)
+
+    assert 0.0 < delta < 1.0
+    assert gamma > 0.0
+    assert vega > 0.0
+
+    implied = omod.implied_volatility(call_price, spot, strike, expiry, rate, "call")
+    assert implied == pytest.approx(sigma, rel=1e-3)
+
+    strikes = [90.0, 100.0, 110.0]
+    maturities = [0.25, 0.5]
+    prices = np.array([
+        [
+            omod.black_scholes_price(spot, k, t, rate, sigma, "call")
+            for k in strikes
+        ]
+        for t in maturities
+    ])
+    surface = omod.implied_vol_surface(strikes, maturities, pd.DataFrame(prices), spot, rate, "call")
+    assert surface.shape == (2, 3)
+    assert np.allclose(surface.to_numpy(), sigma, atol=1e-3)
 
 
 def test_technical_indicators():
@@ -292,6 +335,87 @@ def test_direct_feed_bulk_quotes_and_history(monkeypatch):
 
     monkeypatch.setattr("energy_terminal.data.direct_feed.yf.Ticker", type("T", (), {"history": staticmethod(lambda period, interval, auto_adjust: (_ for _ in ()).throw(Exception('boom')))}))
     assert asyncio.run(feed.fetch_ohlcv("CL=F")) == []
+
+
+def test_lng_feed_adapter_support_and_normalization():
+    assert LNGFeedAdapter.supports("JKM")
+    assert LNGFeedAdapter.supports("TTF=F")
+    assert LNGFeedAdapter.supports("nbp")
+    assert not LNGFeedAdapter.supports("CL=F")
+    assert set(LNGFeedAdapter.supported_symbols()) == {"JKM=F", "TTF=F", "NBP=F"}
+
+
+def test_direct_feed_routes_lng_symbol_to_adapter(monkeypatch):
+    feed = DirectFeed(instruments=["JKM"])
+    tick = Tick(source="direct", symbol="JKM=F", timestamp=1, open=10.0, high=11.0, low=9.0, close=10.5, volume=100, change=0.5, change_pct=5.0)
+    bar = type("Bar", (), {"timestamp": 1_000, "open": 10.0, "high": 11.0, "low": 9.0, "close": 10.5, "volume": 100})
+    monkeypatch.setattr(feed._lng_adapter, "fetch_quote", AsyncMock(return_value=tick))
+    monkeypatch.setattr(feed._lng_adapter, "fetch_ohlcv", AsyncMock(return_value=[bar]))
+
+    result = asyncio.run(feed.fetch_quote("JKM"))
+    assert result is tick
+    history = asyncio.run(feed.fetch_ohlcv("TTF"))
+    assert history == [bar]
+
+
+def test_news_feed_adapter_parses_rss_entries():
+    xml = """
+    <rss version="2.0">
+        <channel>
+            <item>
+                <title>IEA releases monthly report</title>
+                <description>Energy prices remain volatile</description>
+                <link>https://www.iea.org/news</link>
+                <pubDate>Mon, 01 Jun 2026 12:00:00 GMT</pubDate>
+            </item>
+            <item>
+                <title>EIA weekly release</title>
+                <description>US crude inventories updated</description>
+                <link>https://www.eia.gov/news</link>
+                <pubDate>Tue, 02 Jun 2026 14:30:00 GMT</pubDate>
+            </item>
+        </channel>
+    </rss>
+    """
+    items = NewsFeedAdapter._parse_rss("TEST", xml)
+    assert len(items) == 2
+    assert items[0].title == "IEA releases monthly report"
+    assert items[1].source == "TEST"
+    assert items[0].published.endswith("GMT")
+
+
+def test_main_window_news_panel_switch(qtbot, tmp_path, monkeypatch):
+    from energy_terminal.ui.main_window import MainWindow
+
+    monkeypatch.setattr("energy_terminal.ui.panels.news_panel.NewsFeedAdapter.fetch_items", AsyncMock(return_value=[]))
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._swap_panel("news")
+    assert window._panel_stack.currentWidget() is window._panel_news
+
+
+def test_news_panel_refresh_button(qtbot, monkeypatch):
+    from energy_terminal.ui.panels.news_panel import NewsPanel
+
+    panel = NewsPanel()
+    qtbot.addWidget(panel)
+    mock_items = [
+        type("NI", (), {
+            "source": "EIA",
+            "title": "EIA update",
+            "summary": "Weekly energy release",
+            "link": "https://www.eia.gov/news",
+            "published": "Tue, 02 Jun 2026 14:30:00 GMT",
+            "timestamp": 0,
+        })(),
+    ]
+
+    monkeypatch.setattr("energy_terminal.ui.panels.news_panel.NewsFeedAdapter.fetch_items", AsyncMock(return_value=mock_items))
+    panel._refresh_button.click()
+    qtbot.waitUntil(lambda: panel._table.rowCount() == 1)
+
+    assert panel._table.item(0, 2).text() == "EIA update"
+    assert panel._table.item(0, 2).toolTip() == "Weekly energy release"
 
 
 def test_alert_engine_pct_and_spread_branches():

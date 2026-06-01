@@ -58,6 +58,7 @@ from energy_terminal.ui.panels.chart_panel import ChartPanel
 from energy_terminal.ui.panels.debug_panel import DebugPanel
 from energy_terminal.ui.panels.fundamental_panel import FundamentalPanel
 from energy_terminal.ui.panels.market_panel import MarketPanel
+from energy_terminal.ui.panels.news_panel import NewsPanel
 from energy_terminal.ui.panels.risk_panel import RiskPanel
 from energy_terminal.ui.panels.watchlist_panel import WatchlistPanel
 from energy_terminal.ui.panels.weather_panel import WeatherPanel
@@ -184,6 +185,7 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
         self._panel_analytics = AnalyticsPanel(self._cache)
         self._panel_fundamental = FundamentalPanel(self._cache)
         self._panel_weather = WeatherPanel(self._cache)
+        self._panel_news = NewsPanel(self._cache)
         self._panel_risk = RiskPanel(self._cache)
         self._panel_alerts = AlertPanel(self._alerts)
         self._panel_debug = DebugPanel()
@@ -199,6 +201,7 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
             self._panel_analytics,
             self._panel_fundamental,
             self._panel_weather,
+            self._panel_news,
             self._panel_risk,
             self._panel_alerts,
             self._panel_debug,
@@ -231,7 +234,7 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
             lbl.setStyleSheet(f"color: {PALETTE.FG_SECONDARY}; font-size: 10px;")
             sb.addPermanentWidget(lbl)
 
-        sb.showMessage("Ready — press F1–F9 to switch panels, enter ticker + ENTER to navigate")
+        sb.showMessage("Ready — press F1–F10 or Ctrl+N to switch panels, enter ticker + ENTER to navigate")
 
     # ------------------------------------------------------------------
     # Shortcuts
@@ -246,15 +249,17 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
             Qt.Key.Key_F4: lambda: self._swap_panel("analytics"),
             Qt.Key.Key_F5: lambda: self._swap_panel("fundamental"),
             Qt.Key.Key_F6: lambda: self._swap_panel("weather"),
-            Qt.Key.Key_F7: lambda: self._swap_panel("risk"),
-            Qt.Key.Key_F8: lambda: self._swap_panel("alerts"),
-            Qt.Key.Key_F9: lambda: self._swap_panel("debug"),
+            Qt.Key.Key_F7: lambda: self._swap_panel("news"),
+            Qt.Key.Key_F8: lambda: self._swap_panel("risk"),
+            Qt.Key.Key_F9: lambda: self._swap_panel("alerts"),
+            Qt.Key.Key_F10: lambda: self._swap_panel("debug"),
         }
         for key, fn in panel_map.items():
             sc = QShortcut(QKeySequence(key), self)
             sc.activated.connect(fn)
 
         QShortcut(QKeySequence("Ctrl+Q"), self).activated.connect(self.close)
+        QShortcut(QKeySequence("Ctrl+N"), self).activated.connect(lambda: self._swap_panel("news"))
         QShortcut(QKeySequence("Ctrl+R"), self).activated.connect(self._refresh_feeds)
 
     # ------------------------------------------------------------------
@@ -380,6 +385,15 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
         if not raw:
             return
 
+        if raw == "NEWS":
+            self._swap_panel("news")
+            sb = self.statusBar()
+            assert sb is not None
+            sb.showMessage("Panel: NEWS", 3000)
+            log.info("Command bar navigation", input=raw, resolved="NEWS")
+            self._debug("command", "Loaded news panel")
+            return
+
         # Simple ticker navigation: "CL1 <GO>" → load CL=F chart
         ticker_map = {
             "CL1": "CL=F",
@@ -387,6 +401,12 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
             "NG1": "NG=F",
             "RB1": "RB=F",
             "HO1": "HO=F",
+            "JKM1": "JKM=F",
+            "TTF1": "TTF=F",
+            "NBP1": "NBP=F",
+            "JKM": "JKM=F",
+            "TTF": "TTF=F",
+            "NBP": "NBP=F",
         }
         symbol = ticker_map.get(raw, raw)
         self._panel_chart.load_symbol(symbol)
@@ -423,6 +443,7 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
             self._panel_analytics,
             self._panel_fundamental,
             self._panel_weather,
+            self._panel_news,
             self._panel_risk,
             self._panel_alerts,
             self._panel_debug,
@@ -449,9 +470,10 @@ class MainWindow(QMainWindow):  # type: ignore[misc]
                 "analytics": 0,
                 "fundamental": 1,
                 "weather": 2,
-                "risk": 3,
-                "alerts": 4,
-                "debug": 5,
+                "news": 3,
+                "risk": 4,
+                "alerts": 5,
+                "debug": 6,
             }.get(panel_name, 0)
             self._panel_stack.setCurrentIndex(stack_index)
             current = self._panel_stack.currentWidget()

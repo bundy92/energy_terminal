@@ -8,9 +8,10 @@ from energy_terminal.ui.panels.fundamental_panel import FundamentalPanel
 from energy_terminal.ui.panels.weather_panel import WeatherPanel
 from energy_terminal.ui.panels.risk_panel import RiskPanel
 from energy_terminal.ui.panels.alert_panel import AlertPanel
+from energy_terminal.ui.panels.news_panel import NewsPanel
 
 __all__ = [
     "BasePanel", "MarketPanel", "ChartPanel", "WatchlistPanel",
     "AnalyticsPanel", "FundamentalPanel", "WeatherPanel",
-    "RiskPanel", "AlertPanel",
+    "RiskPanel", "AlertPanel", "NewsPanel",
 ]

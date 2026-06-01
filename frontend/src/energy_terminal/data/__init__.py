@@ -25,6 +25,8 @@ from energy_terminal.data.alerts import AlertEngine, AlertFired
 from energy_terminal.data.cache import TimeSeriesCache
 from energy_terminal.data.client import GatewayClient
 from energy_terminal.data.direct_feed import DirectFeed, INSTRUMENT_NAMES
+from energy_terminal.data.lng_feed import LNGFeedAdapter, LNG_INSTRUMENT_NAMES
+from energy_terminal.data.news_feed import NewsFeedAdapter
 
 __all__ = [
     "Alert", "AlertCondition", "AlertEngine", "AlertFired",
@@ -32,4 +34,6 @@ __all__ = [
     "FundamentalReading", "MacroReading", "OHLCVBar",
     "Tick", "WeatherReading",
     "TimeSeriesCache", "GatewayClient", "DirectFeed", "INSTRUMENT_NAMES",
+    "LNGFeedAdapter", "LNG_INSTRUMENT_NAMES",
+    "NewsFeedAdapter",
 ]
