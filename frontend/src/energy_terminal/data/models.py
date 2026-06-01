@@ -19,7 +19,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class EventSource(str, Enum):
@@ -106,14 +106,12 @@ class Tick(BaseEvent):
     change:     float = 0.0
     change_pct: float = 0.0
 
-    @field_validator("high")
-    @classmethod
-    def high_gte_low(cls, v: float, info: Any) -> float:
-        """Validate that high >= low."""
-        low = info.data.get("low")
-        if low is not None and v < low:
-            raise ValueError(f"high ({v}) must be >= low ({low})")
-        return v
+    @model_validator(mode="after")
+    def validate_high_low(self) -> "Tick":
+        """Validate that high is greater than or equal to low."""
+        if self.high < self.low:
+            raise ValueError(f"high ({self.high}) must be >= low ({self.low})")
+        return self
 
 
 # ---------------------------------------------------------------------------

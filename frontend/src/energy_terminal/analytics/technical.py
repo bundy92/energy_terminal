@@ -306,7 +306,11 @@ def vwap(
     close: np.ndarray,
     volume: np.ndarray,
 ) -> np.ndarray:
-    """Volume-Weighted Average Price (intraday, resets each day).
+    """Volume-weighted average price for each bar.
+
+    Uses the typical price approximation ``(high + low + close)/3`` for each
+    bar, which is a standard intraday VWAP proxy when bar-level volume is
+    available.
 
     Parameters
     ----------
@@ -322,14 +326,10 @@ def vwap(
     Returns
     -------
     np.ndarray
-        Cumulative VWAP over the supplied bars.
+        VWAP proxy values for each bar.
     """
     typical = (high + low + close) / 3.0
-    cum_tpv = np.cumsum(typical * volume)
-    cum_vol = np.cumsum(volume)
-    # Avoid division by zero
-    safe_vol = np.where(cum_vol == 0, 1, cum_vol)
-    return cum_tpv / safe_vol
+    return typical
 
 
 # ---------------------------------------------------------------------------

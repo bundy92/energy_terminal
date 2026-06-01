@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS weather (
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (
-    id          INTEGER PRIMARY KEY,
+    id          BIGINT PRIMARY KEY,
     action      VARCHAR,
     target_key  VARCHAR,
     source      VARCHAR,
@@ -167,7 +167,8 @@ class TimeSeriesCache:
         symbol : str
             Instrument ticker.
         days : int
-            Number of calendar days of history to return.
+            Number of calendar days of history to return, relative to the
+            most recent data point for the symbol.
 
         Returns
         -------
@@ -175,7 +176,17 @@ class TimeSeriesCache:
             DataFrame with columns ``[ts_ms, open, high, low, close, volume]``
             indexed by ``ts_ms`` ascending, or empty DataFrame if no data.
         """
-        cutoff_ms = int((time.time() - days * 86_400) * 1000)
+        result = self._conn.execute(
+            "SELECT MAX(ts_ms) FROM ohlcv WHERE symbol = ?",
+            [symbol],
+        ).fetchone()
+
+        if not result or result[0] is None:
+            return pd.DataFrame(columns=["ts_ms", "open", "high", "low", "close", "volume"])
+
+        latest_ts = int(result[0])
+        cutoff_ms = int(latest_ts - days * 86_400 * 1000)
+
         df = self._conn.execute(
             """
             SELECT ts_ms, open, high, low, close, volume
@@ -295,9 +306,12 @@ class TimeSeriesCache:
 
     def _audit(self, action: str, target_key: str, source: str) -> None:
         """Append a record to the audit log."""
+        next_id = self._conn.execute(
+            "SELECT COALESCE(MAX(id), 0) + 1 FROM audit_log"
+        ).fetchone()[0]
         self._conn.execute(
-            "INSERT INTO audit_log (action, target_key, source, ts_ms) VALUES (?,?,?,?)",
-            [action, target_key, source, int(time.time() * 1000)],
+            "INSERT INTO audit_log (id, action, target_key, source, ts_ms) VALUES (?,?,?,?,?)",
+            [next_id, action, target_key, source, int(time.time() * 1000)],
         )
 
     # ------------------------------------------------------------------

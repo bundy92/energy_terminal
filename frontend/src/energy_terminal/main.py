@@ -77,7 +77,7 @@ def main() -> None:
     window.show()
 
     with loop:
-        loop.run_until_complete(_async_main(window))
+        loop.create_task(_async_main(window))
         loop.run_forever()
 
 

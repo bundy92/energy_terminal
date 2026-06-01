@@ -21,7 +21,7 @@ PIP        := $(PYTHON) -m pip
 PYTEST     := $(PYTHON) -m pytest
 RUFF       := $(PYTHON) -m ruff
 MYPY       := $(PYTHON) -m mypy
-REBAR      := rebar3
+MIX        := /usr/bin/mix
 
 BACKEND_DIR  := backend
 FRONTEND_DIR := frontend
@@ -46,27 +46,26 @@ install: check-deps
 	cd $(FRONTEND_DIR) && $(PIP) install -e ".[dev]"
 	@echo "▶ Installing pre-commit hooks..."
 	cd $(FRONTEND_DIR) && pre-commit install
-	@echo "▶ Fetching Erlang dependencies..."
-	cd $(BACKEND_DIR) && $(REBAR) get-deps
+	@echo "▶ Fetching Elixir dependencies..."
+	cd $(BACKEND_DIR) && $(MIX) deps.get
 	@echo "✓ Installation complete"
 
 check-deps:
 	@command -v $(PYTHON) >/dev/null 2>&1 || { echo "ERROR: python3 not found"; exit 1; }
-	@command -v $(REBAR)  >/dev/null 2>&1 || { echo "ERROR: rebar3 not found — https://rebar3.org"; exit 1; }
-	@command -v erl       >/dev/null 2>&1 || { echo "ERROR: Erlang/OTP not found — https://erlang.org"; exit 1; }
+	@command -v $(MIX) >/dev/null 2>&1 || { echo "ERROR: mix not found — install Elixir"; exit 1; }
+	@command -v elixir >/dev/null 2>&1 || { echo "ERROR: elixir not found — install Elixir"; exit 1; }
 
 # ----------------------------------------------------------------------------
 # Testing
 # ----------------------------------------------------------------------------
 
-test: test-erlang test-python
+test: test-elixir test-python
 	@echo "✓ All tests passed"
 
-test-erlang:
-	@echo "▶ Running Erlang tests..."
-	cd $(BACKEND_DIR) && $(REBAR) eunit --cover
-	cd $(BACKEND_DIR) && $(REBAR) proper --cover 2>/dev/null || true
-	@echo "✓ Erlang tests complete"
+test-elixir:
+	@echo "▶ Running Elixir tests..."
+	cd $(BACKEND_DIR) && $(MIX) test
+	@echo "✓ Elixir tests complete"
 
 test-python:
 	@echo "▶ Running Python tests..."
@@ -86,7 +85,7 @@ test-python-fast:
 # Linting & formatting
 # ----------------------------------------------------------------------------
 
-lint: lint-python lint-erlang
+lint: lint-python lint-elixir
 	@echo "✓ All lint checks passed"
 
 lint-python:
@@ -95,32 +94,28 @@ lint-python:
 	@echo "▶ Running mypy..."
 	cd $(FRONTEND_DIR) && $(MYPY) $(SRC_DIR)
 
-lint-erlang:
-	@echo "▶ Checking Erlang formatting..."
-	cd $(BACKEND_DIR) && $(REBAR) fmt --check 2>/dev/null || \
-		echo "  (erlfmt not available — skipping format check)"
+lint-elixir:
+	@echo "▶ Checking Elixir formatting..."
+	cd $(BACKEND_DIR) && $(MIX) format --check
 
-fmt: fmt-python fmt-erlang
+fmt: fmt-python fmt-elixir
 
 fmt-python:
 	@echo "▶ Formatting Python (ruff)..."
 	cd $(FRONTEND_DIR) && $(RUFF) check --fix $(SRC_DIR) tests/
 	cd $(FRONTEND_DIR) && $(RUFF) format $(SRC_DIR) tests/
 
-fmt-erlang:
-	@echo "▶ Formatting Erlang (erlfmt)..."
-	cd $(BACKEND_DIR) && $(REBAR) fmt 2>/dev/null || \
-		echo "  (erlfmt not available — skipping)"
+fmt-elixir:
+	@echo "▶ Formatting Elixir..."
+	cd $(BACKEND_DIR) && $(MIX) format
 
 # ----------------------------------------------------------------------------
 # Running
 # ----------------------------------------------------------------------------
 
 run-backend:
-	@echo "▶ Starting Erlang gateway on ws://localhost:8765/ws ..."
-	cd $(BACKEND_DIR) && $(REBAR) shell \
-		--config config/sys.config \
-		--vm_args config/vm.args
+	@echo "▶ Starting Elixir gateway on ws://localhost:8765/ws ..."
+	cd $(BACKEND_DIR) && $(MIX) run --no-halt
 
 run-frontend:
 	@echo "▶ Starting Energy Terminal UI..."
@@ -142,8 +137,8 @@ run:
 # ----------------------------------------------------------------------------
 
 build-release:
-	@echo "▶ Building Erlang release..."
-	cd $(BACKEND_DIR) && $(REBAR) release
+	@echo "▶ Building Elixir release..."
+	cd $(BACKEND_DIR) && $(MIX) release
 	@echo "▶ Building Python wheel..."
 	cd $(FRONTEND_DIR) && $(PYTHON) -m build
 	@echo "✓ Release artefacts ready"
@@ -153,9 +148,9 @@ build-release:
 # ----------------------------------------------------------------------------
 
 clean:
-	@echo "▶ Cleaning Erlang artefacts..."
-	cd $(BACKEND_DIR) && $(REBAR) clean
-	rm -rf $(BACKEND_DIR)/_build $(BACKEND_DIR)/log
+	@echo "▶ Cleaning Elixir artefacts..."
+	cd $(BACKEND_DIR) && $(MIX) clean
+	rm -rf $(BACKEND_DIR)/_build $(BACKEND_DIR)/deps $(BACKEND_DIR)/log
 	@echo "▶ Cleaning Python artefacts..."
 	find $(FRONTEND_DIR) -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find $(FRONTEND_DIR) -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true

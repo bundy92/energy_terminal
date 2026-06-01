@@ -2,7 +2,7 @@
 
 ## Overview
 
-Energy Terminal is a two-process desktop application. The Erlang/OTP
+Energy Terminal is a two-process desktop application. The Elixir/OTP
 backend acts as a fault-tolerant data gateway; the Python frontend
 provides the Bloomberg-style UI, analytics engine, and local cache.
 
@@ -47,7 +47,7 @@ provides the Bloomberg-style UI, analytics engine, and local cache.
                                │ WebSocket JSON
                                │ ws://localhost:8765/ws
 ╔══════════════════════════════▼═══════════════════════════════════════╗
-║                  ERLANG/OTP DATA GATEWAY                             ║
+║                  ELIXIR/OTP DATA GATEWAY                             ║
 ║                                                                      ║
 ║  ┌──────────────────────────────────────────────────────────────┐   ║
 ║  │  energy_gateway_sup  (one_for_one, intensity=5, period=10)   │   ║

@@ -1,7 +1,7 @@
 # ⬡ Energy Terminal
 
 A Bloomberg-inspired energy market analysis desktop terminal built on
-an Erlang/OTP fault-tolerant data gateway and a Python/PyQt6 UI.
+an Elixir/OTP fault-tolerant data gateway and a Python/PyQt6 UI.
 
 ---
 
@@ -17,14 +17,14 @@ an Erlang/OTP fault-tolerant data gateway and a Python/PyQt6 UI.
 - **Macro overlays** — FRED USD index, CPI, real rates, industrial production
 - **Alert engine** — ABOVE/BELOW/PCT_CHANGE/SPREAD_WIDE with audit log
 - **Local DuckDB cache** — Offline mode; seeds all panels on startup from persisted data
-- **Erlang/OTP backend** — Supervised feeds, token-bucket rate limiting, ETS cache, pub/sub
+- **Elixir/OTP backend** — Supervised feeds, token-bucket rate limiting, ETS cache, pub/sub
 
 ---
 
 ## Architecture
 
 ```
-Python UI (PyQt6)  ←—WebSocket JSON—→  Erlang/OTP Gateway
+Python UI (PyQt6)  ←—WebSocket JSON—→  Elixir/OTP Gateway
      │                                       │
   DuckDB cache                        ETS + Cowboy
   AlertEngine                    Yahoo Finance · EIA · IEA
@@ -40,8 +40,9 @@ See [`docs/architecture.md`](docs/architecture.md) for the full component diagra
 | Component | Version |
 |-----------|---------|
 | Python    | ≥ 3.11  |
+| Elixir    | ≥ 1.15  |
 | Erlang/OTP| ≥ 26    |
-| rebar3    | ≥ 3.22  |
+| mix       | ≥ 1.15  |
 
 ---
 
@@ -66,7 +67,7 @@ export IEA_API_KEY=your_iea_key      # https://www.iea.org/data-and-statistics
 The terminal runs without any API keys — it falls back to Yahoo Finance
 (free, no key) and Open-Meteo (free, no key) for price and weather data.
 
-### 3. Start the Erlang data gateway
+### 3. Start the Elixir data gateway
 
 ```bash
 make run-backend

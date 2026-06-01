@@ -27,7 +27,7 @@ from typing import Any
 import structlog
 import websockets
 from websockets.exceptions import ConnectionClosed, WebSocketException
-from websockets.legacy.protocol import WebSocketClientProtocol
+from websockets.legacy.protocol import WebSocketCommonProtocol
 
 from energy_terminal.config import settings
 from energy_terminal.data.models import (
@@ -180,7 +180,7 @@ class GatewayClient:
     # Internal receive loop
     # ------------------------------------------------------------------
 
-    async def _receive_loop(self, ws: WebSocketClientProtocol) -> None:
+    async def _receive_loop(self, ws: WebSocketCommonProtocol) -> None:
         """Read messages until the connection closes."""
         async for raw in ws:
             self._last_event_ts = time.time()

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# start_backend.sh — Start the Erlang/OTP Energy Gateway
+# start_backend.sh — Start the Elixir/OTP Energy Gateway
 # =============================================================================
 # Usage:
 #   ./scripts/start_backend.sh          # interactive shell
@@ -21,17 +21,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BACKEND_DIR="$PROJECT_ROOT/backend"
 
-# Validate rebar3 is available
-if ! command -v rebar3 &>/dev/null; then
-    echo "ERROR: rebar3 not found."
-    echo "       Install: https://rebar3.org or 'brew install rebar3' on macOS"
-    exit 1
-fi
-
-# Validate Erlang is available
-if ! command -v erl &>/dev/null; then
-    echo "ERROR: Erlang/OTP not found."
-    echo "       Install: https://erlang.org/downloads or 'brew install erlang'"
+# Validate mix is available
+if ! command -v mix &>/dev/null; then
+    echo "ERROR: mix not found."
+    echo "       Install Elixir: https://elixir-lang.org/install.html"
     exit 1
 fi
 
@@ -48,7 +41,7 @@ warn_missing_key() {
 }
 
 echo ""
-echo "  ⬡  Energy Terminal — Erlang Gateway"
+echo "  ⬡  Energy Terminal — Elixir Gateway"
 echo "  ────────────────────────────────────"
 warn_missing_key EIA_API_KEY  "https://www.eia.gov/opendata/register.php"
 warn_missing_key FRED_API_KEY "https://fred.stlouisfed.org/docs/api/api_key.html"
@@ -62,19 +55,15 @@ cd "$BACKEND_DIR"
 
 # Compile first
 echo "▶ Compiling..."
-rebar3 compile
+/usr/bin/mix compile
 
 echo "▶ Starting gateway on ws://localhost:8765/ws ..."
 echo "   Health: http://localhost:8765/health"
 echo ""
 
 if [[ "${1:-}" == "detached" ]]; then
-    ERL_FLAGS="-detached" rebar3 shell \
-        --config config/sys.config \
-        --vm_args config/vm.args
-    echo "✓ Gateway started in background (PID written to backend/log/)"
+    /usr/bin/mix run --no-halt &
+    echo "✓ Gateway started in background"
 else
-    rebar3 shell \
-        --config config/sys.config \
-        --vm_args config/vm.args
+    /usr/bin/mix run --no-halt
 fi
